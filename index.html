@@ -1,0 +1,234 @@
+<meta charset="utf-8">
+<title>Generador de mostres</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Public+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: barra superior fixa amb l'exportació; a l'esquerra el formulari per passos, a la dreta el diagnòstic i les quotes. */
+:root {
+  --bg: #eef1f2; --surface: #ffffff; --sunk: #f6f8f8; --ink: #17212b; --muted: #5a6670; --line: #d3dade;
+  --accent: #1c5b78; --accent-ink: #ffffff; --mark: #ffe45c; --mark-ink: #1b2a85;
+  --ok: #2c7a4b; --warn: #a65314; --bad: #b3261e; --warn-bg: #fdf1e6; --bad-bg: #fbe9e7; --note-bg: #e8f0f4;
+  --head: #dde3e6; --head2: #eef2f3;
+  --f-display: "Archivo", "Helvetica Neue", Arial, sans-serif;
+  --f-body: "Public Sans", "Segoe UI", system-ui, sans-serif;
+  --f-num: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #11171b; --surface: #182126; --sunk: #141c20; --ink: #e4eaed; --muted: #9aa7af; --line: #2d3a41;
+  --accent: #6fb2d2; --accent-ink: #0c1a22; --mark: #e8c93a; --mark-ink: #13205e;
+  --ok: #6cc08e; --warn: #e5a066; --bad: #f08a80; --warn-bg: #2b2117; --bad-bg: #2f1a19; --note-bg: #19272f;
+  --head: #24323a; --head2: #1d292f; color-scheme: dark;
+} }
+:root[data-theme="dark"] {
+  --bg: #11171b; --surface: #182126; --sunk: #141c20; --ink: #e4eaed; --muted: #9aa7af; --line: #2d3a41;
+  --accent: #6fb2d2; --accent-ink: #0c1a22; --mark: #e8c93a; --mark-ink: #13205e;
+  --ok: #6cc08e; --warn: #e5a066; --bad: #f08a80; --warn-bg: #2b2117; --bad-bg: #2f1a19; --note-bg: #19272f;
+  --head: #24323a; --head2: #1d292f; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font: 14px/1.5 var(--f-body); }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--surface); }
+h1, h2, h3 { font-family: var(--f-display); text-wrap: balance; margin: 0; }
+button, input, select { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.top { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--surface); border-bottom: 1px solid var(--line);
+  padding-block: 10px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.top-in { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; max-width: 1500px; margin: 0 auto; }
+.brand { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-right: auto; }
+.brand h1 { font-size: 19px; font-weight: 700; letter-spacing: -0.01em; }
+.brand span { color: var(--muted); font-size: 13px; }
+.export { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+#fname { font-family: var(--f-num); font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+.btn { border: 1px solid var(--line); background: var(--surface); border-radius: 6px; padding: 6px 12px; cursor: pointer; }
+.btn:hover { border-color: var(--accent); }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; padding: 8px 16px; }
+.btn.primary:disabled { opacity: .5; cursor: not-allowed; }
+.btn.small { padding: 3px 9px; font-size: 12.5px; }
+.link { background: none; border: 0; color: var(--accent); cursor: pointer; padding: 0; font-size: 12.5px; text-decoration: underline; }
+#export-msg { font-size: 12.5px; color: var(--muted); }
+
+.wrap { display: grid; grid-template-columns: minmax(300px, 400px) minmax(0, 1fr); gap: 20px; max-width: 1500px; margin: 0 auto;
+  padding-block: 20px 60px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+@media (max-width: 900px) { .wrap { grid-template-columns: minmax(0, 1fr); } .top { position: static; } }
+.side { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.step { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
+.step h2 { font-size: 14.5px; font-weight: 600; display: flex; gap: 8px; align-items: baseline; }
+.step h2 .n { font-family: var(--f-num); font-size: 12px; color: var(--accent); font-weight: 500; }
+.field { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.field.row { flex-direction: row; align-items: center; justify-content: space-between; gap: 10px; }
+.field.row input { width: 110px; }
+.f-label { font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+.f-hint { font-size: 12px; color: var(--muted); }
+input[type=text], input[type=number], input:not([type]), select { border: 1px solid var(--line); border-radius: 5px; padding: 5px 8px; background: var(--sunk); min-width: 0; width: 100%; }
+input.n-cell { background: var(--mark); color: var(--mark-ink); font-weight: 600; font-family: var(--f-num); font-size: 16px; border-color: transparent; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.check { display: inline-flex; gap: 6px; align-items: center; margin-right: 14px; }
+.row-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.muted { color: var(--muted); }
+#db-info { font-size: 12.5px; color: var(--muted); }
+#db-info strong { color: var(--ink); font-weight: 600; }
+#db-status, #muni-msg { font-size: 12.5px; color: var(--warn); }
+.file { position: relative; overflow: hidden; display: inline-block; }
+.file input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { display: inline-flex; align-items: center; gap: 4px; font-family: var(--f-num); font-size: 12px; padding: 1px 7px; border-radius: 10px; background: var(--head2); border: 1px solid var(--line); }
+.chip.big { font-family: var(--f-body); font-size: 13px; font-weight: 600; padding: 2px 4px 2px 10px; }
+.chip.small { background: var(--bad-bg); color: var(--bad); border-color: transparent; }
+.chip .x { border: 0; background: none; cursor: pointer; font-size: 15px; line-height: 1; padding: 0 4px; color: var(--muted); }
+.units { display: flex; flex-direction: column; gap: 6px; max-height: 360px; overflow: auto; padding-right: 2px; }
+.unit { display: grid; grid-template-columns: auto minmax(0, 1fr); grid-template-areas: "c n" "c z"; gap: 2px 8px; align-items: center; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--sunk); }
+.unit > input[type=checkbox] { grid-area: c; }
+.unit .u-name { grid-area: n; font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+.unit > input[type=text] { grid-area: z; }
+.unit.off { opacity: .55; }
+.zonepop { display: flex; flex-direction: column; gap: 6px; border-top: 1px dashed var(--line); padding-top: 8px; }
+.design-row { display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: 8px; align-items: center; }
+.vars { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; min-width: 0; }
+.vars select { flex: 1 1 84px; min-width: 84px; }
+.by { color: var(--muted); font-size: 12px; }
+.extra { border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; background: var(--sunk); }
+.extra-head { display: flex; justify-content: space-between; align-items: baseline; font-size: 13px; }
+
+.main { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; }
+.kpi { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; display: flex; flex-direction: column; gap: 2px; border-top: 3px solid var(--line); }
+.kpi.ok { border-top-color: var(--ok); } .kpi.warn { border-top-color: var(--warn); } .kpi.bad { border-top-color: var(--bad); }
+.k-label { font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+.k-value { font-family: var(--f-num); font-size: 22px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.k-sub { font-size: 12px; color: var(--muted); }
+.alerts { display: flex; flex-direction: column; gap: 6px; }
+.alert { border-radius: 6px; padding: 8px 12px; font-size: 13px; border-left: 3px solid; max-width: 110ch; }
+.alert.bad { background: var(--bad-bg); border-color: var(--bad); }
+.alert.warn { background: var(--warn-bg); border-color: var(--warn); }
+.alert.note { background: var(--note-bg); border-color: var(--accent); }
+.res-block { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.res-block h3 { font-size: 15px; font-weight: 600; }
+.dist { margin: 0; font-size: 12.5px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.qt { margin: 0; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.qt figcaption { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; font-family: var(--f-display); font-weight: 600; font-size: 13px; letter-spacing: .01em; }
+.badge { font-family: var(--f-body); font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 9px; background: var(--head2); color: var(--muted); }
+.badge.principal { background: var(--accent); color: var(--accent-ink); }
+.scroll { overflow-x: auto; max-width: 100%; }
+table.q { border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
+table.q th, table.q td { border: 1px solid var(--line); padding: 3px 6px; text-align: center; white-space: nowrap; }
+table.q thead th { background: var(--head2); font-weight: 600; font-size: 11.5px; }
+table.q thead th.tot, table.q thead th.corner { background: var(--head); }
+table.q tbody th { text-align: left; font-weight: 600; background: var(--surface); position: sticky; left: 0; z-index: 1; max-width: 240px; white-space: normal; min-width: 120px; }
+table.q td { font-family: var(--f-num); min-width: 38px; }
+table.q td.sub { background: var(--head2); font-weight: 500; }
+table.q td.tot { background: var(--head); font-weight: 600; }
+table.q td.small { background: var(--bad-bg); color: var(--bad); font-weight: 600; }
+table.q td.lowz { color: var(--warn); font-weight: 600; }
+table.q tr.total th, table.q tr.total td { background: var(--head); font-weight: 600; }
+table.zones td { min-width: 90px; }
+.legend { font-size: 12px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 12px; }
+.sw { display: inline-block; width: 12px; height: 12px; border-radius: 2px; vertical-align: -2px; margin-right: 4px; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<header class="top">
+  <div class="top-in">
+    <div class="brand"><h1>Generador de mostres</h1><span>Quotes per zona, sexe, edat i origen a partir del cens</span></div>
+    <div class="export">
+      <span id="fname"></span>
+      <button id="export" class="btn primary" type="button" disabled>Exporta a Excel</button>
+      <span id="export-msg" role="status"></span>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+  <aside class="side">
+    <section class="step">
+      <h2><span class="n">1</span>Base de dades</h2>
+      <div id="db-info"></div>
+      <div class="row-actions">
+        <span class="file btn small">Carrega una base nova…<input id="f-file" type="file" accept=".csv,.zip,.xlsx,.txt" aria-label="Carrega una base de dades"></span>
+        <button id="db-reset" class="link" type="button" hidden>Torna a la base inclosa</button>
+      </div>
+      <span class="f-hint">CSV, ZIP o XLSX en format llarg d'Idescat (any, agrupació censal, edat, nacionalitat o lloc de naixement, sexe, valor). Es queda desada en aquest navegador.</span>
+      <span id="db-status" role="status"></span>
+    </section>
+
+    <section class="step">
+      <h2><span class="n">2</span>Estudi</h2>
+      <div class="grid2">
+        <label class="field"><span class="f-label">Núm. d'estudi</span><input id="f-estudi" type="text"></label>
+        <label class="field"><span class="f-label">Any de l'estudi</span><input id="f-anyestudi" type="text" inputmode="numeric"></label>
+      </div>
+      <label class="field"><span class="f-label">Títol de la taula principal</span><input id="f-titol" type="text"></label>
+      <label class="field"><span class="f-label">Descripció de l'univers</span><input id="f-univers" type="text"></label>
+      <label class="field"><span class="f-label">Font</span><input id="f-font" type="text"></label>
+      <span class="f-hint">Si deixes els textos buits, es fan servir els proposats (en gris).</span>
+    </section>
+
+    <section class="step">
+      <h2><span class="n">3</span>Àmbit i zones</h2>
+      <div class="grid2">
+        <label class="field"><span class="f-label">Any del cens</span><select id="f-year"></select></label>
+        <label class="field"><span class="f-label">En afegir</span><select id="f-muni-mode"><option value="replace">Substitueix</option><option value="add">Suma a l'àmbit</option></select></label>
+      </div>
+      <div class="field"><span class="f-label">Municipi</span>
+        <div class="row-actions" style="flex-wrap:nowrap"><input id="f-muni" list="munis" placeholder="Escriu un municipi…" aria-label="Municipi"><button id="add-muni" class="btn small" type="button">Tria</button></div>
+        <datalist id="munis"></datalist><span id="muni-msg" role="status"></span>
+      </div>
+      <div id="muni-chips" class="chips"></div>
+      <div class="row-actions"><span class="f-hint">Zones:</span>
+        <button id="z-agrup" class="btn small" type="button">Una per agrupació</button>
+        <button id="z-muni" class="btn small" type="button">Una per municipi</button></div>
+      <span class="f-hint">Dona el mateix nom de zona a diverses agrupacions per agrupar-les. Desmarca les que no entren a l'estudi.</span>
+      <label class="check"><input id="f-usezp" type="checkbox">Ajusta el pes de les zones amb una població externa</label>
+      <div id="units"></div>
+    </section>
+
+    <section class="step">
+      <h2><span class="n">4</span>Univers</h2>
+      <div class="grid2">
+        <label class="field"><span class="f-label">Edat mínima</span><input id="f-minage" type="number" min="0"></label>
+        <label class="field"><span class="f-label">Edat màxima</span><input id="f-maxage" type="number" min="0" placeholder="sense límit"></label>
+      </div>
+      <label class="field"><span class="f-label">Franges d'edat (inici de cada franja)</span><input id="f-bands" type="text"><span class="f-hint">Els talls han de coincidir amb les franges quinquennals del cens (20, 25, 30…).</span></label>
+      <div class="field"><span class="f-label">Origen inclòs a l'univers</span><div id="f-origins"></div></div>
+    </section>
+
+    <section class="step">
+      <h2><span class="n">5</span>Taules i creuaments</h2>
+      <div class="row-actions"><span class="f-hint">Models:</span>
+        <button class="btn small" type="button" data-preset="plantilla">Zona × sexe × edat</button>
+        <button class="btn small" type="button" data-preset="complet">Creuament complet amb origen</button>
+        <button class="btn small" type="button" data-preset="marginal">Origen marginal</button>
+        <button class="btn small" type="button" data-preset="municipi">Sense zones</button></div>
+      <div class="extra"><div class="extra-head"><strong>Taula principal</strong><span class="f-hint">la que va a camp</span></div><div id="main-design"></div></div>
+      <div id="extras" style="display:flex;flex-direction:column;gap:8px"></div>
+      <div><button id="add-extra" class="btn small" type="button">Afegeix una taula</button></div>
+    </section>
+
+    <section class="step">
+      <h2><span class="n">6</span>Mostra</h2>
+      <div class="grid2">
+        <label class="field"><span class="f-label">Mida (N)</span><input id="f-n" class="n-cell" type="number" min="1"></label>
+        <label class="field"><span class="f-label">Avís si quota ≤</span><input id="f-threshold" type="number" min="0"></label>
+      </div>
+      <label class="field"><span class="f-label">Arrodoniment</span><select id="f-rounding">
+        <option value="lr">Restes majors: la suma quadra amb la N i amb cada zona</option>
+        <option value="directe">ROUND directe a cada cel·la (pot no quadrar)</option></select></label>
+      <label class="field"><span class="f-label">% de la mostra en CAWI</span><input id="f-cawi" type="number" min="0" max="100"><span class="f-hint">0 = tot CATI. Si hi poses un percentatge, l'Excel afegeix els blocs CAWI i CATI.</span></label>
+      <div><button id="reset-cfg" class="link" type="button">Restableix el disseny</button></div>
+    </section>
+  </aside>
+
+  <main class="main">
+    <div id="results"><p class="muted">Carregant la base de dades del cens…</p></div>
+    <p class="legend"><span><span class="sw" style="background:var(--bad-bg);outline:1px solid var(--bad)"></span>quota per sota del llindar</span><span><span class="sw" style="background:var(--mark)"></span>a l'Excel, cel·les editables (N, ajustos, CAWI)</span><span>Passa el ratolí per una cel·la per veure'n l'univers i l'ajust.</span></p>
+  </main>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="data/cens-base.js"></script>
+<script src="js/engine.js"></script>
+<script src="js/export.js"></script>
+<script src="js/app.js"></script>
