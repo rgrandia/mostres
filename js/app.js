@@ -33,13 +33,44 @@
       year: db.years[db.years.length - 1], munis: [muni.name],
       units: M.defaultZones(db, muni.name).map((z) => Object.assign(z, { inc: true, name: db.units[z.u].name })),
       minAge: 18, maxAge: '', bands: '18, 30, 45, 60',
-      origins: db.origins.map((o, i) => i).filter((i) => /espanyol/i.test(db.origins[i])).length
-        ? db.origins.map((o, i) => i).filter((i) => /espanyol/i.test(db.origins[i])) : db.origins.map((o, i) => i),
+      origins: defaultOrigins(),
       N: 400, rounding: 'lr', threshold: 2, cawiPct: 0,
-      main: { rows: 'zona', cols: ['sexe', 'edat'] },
-      extras: [{ rows: 'cap', cols: ['sexe', 'edat'], mode: 'derivada' }, { rows: 'zona', cols: [], mode: 'derivada' }],
+      ...defaultDesign(),
       useZonePop: false, zonePop: {},
     };
+  }
+  function defaultOrigins() {
+    const all = db.origins.map((o, i) => i);
+    const lab = (i) => String(db.originLabels[i]).toLowerCase();
+    if (db.isShare) {
+      // en bases de percentatges cal un grup de categories excloents que sumi el 100%
+      const nat = all.filter((i) => /^(espanyola|estrangera)$/.test(lab(i)));
+      if (nat.length > 1) return nat;
+      const birth = all.filter((i) => /nascud.*(catalunya|resta|estranger)/.test(lab(i)));
+      if (birth.length > 1) return birth;
+      return all;
+    }
+    const esp = all.filter((i) => /espanyol/.test(lab(i)));
+    return esp.length ? esp : all;
+  }
+  function defaultDesign() {
+    const has = db.has;
+    const base = ['sexe', 'edat'].filter((v) => has[v]);
+    const cols = db.isShare && has.origen ? ['origen'] : base.length ? base : has.origen ? ['origen'] : [];
+    return {
+      main: { rows: has.zona ? 'zona' : 'cap', cols },
+      extras: has.zona && cols.length ? [{ rows: 'cap', cols: cols.slice(), mode: 'derivada' }, { rows: 'zona', cols: [], mode: 'derivada' }] : [],
+    };
+  }
+  /** Treu del disseny les variables que la base actual no té. */
+  function sanitize(st) {
+    const fix = (t) => Object.assign(t, { cols: (t.cols || []).filter((v) => db.has[v]), rows: db.has.zona ? t.rows : 'cap' });
+    fix(st.main);
+    st.extras = (st.extras || []).map(fix).filter((t) => t.cols.length || t.rows === 'zona');
+    st.origins = (st.origins || []).filter((i) => i < db.origins.length);
+    if (!st.origins.length) st.origins = defaultOrigins();
+    if (!db.years.includes(String(st.year))) st.year = db.years[db.years.length - 1];
+    return st;
   }
   function save() { try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); } catch (e) { /* sense emmagatzematge */ } }
   function load() {
@@ -49,7 +80,7 @@
         // les unitats es desen pel nom: una base nova pot tenir un altre ordre
         s.units = s.units.map((x) => Object.assign({}, x, { u: db.units.findIndex((n) => n.name === x.name) })).filter((x) => x.u >= 0);
         s.munis = s.munis.filter((m) => db.munis.some((x) => x.name === m));
-        if (s.units.length && s.munis.length) return Object.assign(defaultState(), s);
+        if (s.units.length && s.munis.length) return sanitize(Object.assign(defaultState(), s));
       }
     } catch (e) { /* configuració antiga o malmesa */ }
     return defaultState();
@@ -98,13 +129,17 @@
       const t0 = performance.now();
       const nd = await readFile(file);
       const oldNames = state ? state.units.map((x) => ({ name: x.name, zona: x.zona, inc: x.inc })) : [];
+      const sig = (d) => ['zona', 'sexe', 'edat', 'origen'].map((k) => (d.has[k] ? 1 : 0)).join('') + (d.isShare ? '%' : '');
+      const sameShape = db && sig(db) === sig(nd);
       db = nd;
       dbLabel = `${nd.source.file} (carregada ${new Date().toLocaleDateString('ca-ES')})`;
       try { await idb.set('custom', { name: file.name, blob: file, date: Date.now() }); } catch (e) { /* no es pot desar al navegador */ }
       const keep = state;
       state = defaultState();
       if (keep) {
-        ['estudi', 'anyEstudi', 'minAge', 'maxAge', 'bands', 'N', 'rounding', 'threshold', 'cawiPct', 'main', 'extras'].forEach((k) => { state[k] = keep[k]; });
+        // el disseny de taules només es conserva si la base nova té les mateixes variables
+        ['estudi', 'anyEstudi', 'minAge', 'maxAge', 'bands', 'N', 'rounding', 'threshold', 'cawiPct'].concat(sameShape ? ['main', 'extras'] : [])
+          .forEach((k) => { state[k] = keep[k]; });
         const sameMunis = keep.munis.filter((m) => db.munis.some((x) => x.name === m));
         if (sameMunis.length) {
           state.munis = sameMunis;
@@ -114,6 +149,7 @@
           });
         }
       }
+      sanitize(state);
       st.textContent = `Base carregada en ${((performance.now() - t0) / 1000).toFixed(1)} s.`;
       renderAll();
     } catch (e) {
@@ -134,14 +170,20 @@
     };
   }
   function muniLabel() {
+    if (!db.has.zona) return db.territory || db.units[0].name || 'Total';
     return state.munis.length === 1 ? M.niceMuni(state.munis[0]) : 'Total àmbit';
   }
   function autoTexts(res) {
     const o = res ? res.cats.origen : [];
-    const nat = /naixement/i.test(db.originVar || '') ? 'nascuda a' : 'de nacionalitat';
-    const univ = `Població de ${state.minAge}${state.maxAge !== '' ? ' a ' + state.maxAge : ''} anys${state.maxAge !== '' ? '' : ' i més'}` +
-      (o.length === 1 && o.length < db.origins.length ? ` ${nat} ${o[0].toLowerCase()}` : '');
-    let font = `Cens de població ${state.year} per agrupació censal (Idescat)`;
+    const labs = o.map((x) => x.toLowerCase());
+    const one = o.length === 1 && o.length < db.origins.length ? labs[0] : '';
+    const qual = one ? (/^nascud/.test(one) ? ' ' + one : /naixement/i.test(db.originVar || '') ? ' nascuda a ' + one : ' de nacionalitat ' + one) : '';
+    const univ = db.has.edat
+      ? `Població de ${state.minAge}${state.maxAge !== '' ? ' a ' + state.maxAge : ''} anys${state.maxAge !== '' ? '' : ' i més'}${qual}`
+      : `Població total (totes les edats)${qual}`;
+    const isAgrup = db.has.zona && db.units.some((u) => u.num > 0);
+    let font = isAgrup ? `Cens de població ${state.year} per agrupació censal (Idescat)` : `${db.source.file || 'Dades'}${db.has.any ? ', ' + state.year : ''}`;
+    if (db.isShare) font += ' (percentatges)';
     if (res) {
       const part = res.notes.find((n) => n.startsWith('Edat:'));
       if (part) {
@@ -186,9 +228,9 @@
     const r = result, d = r.diag, out = $('#results');
     const thr = d.threshold;
     const kpis = h('div', { class: 'kpis' },
-      kpi('Univers', fmt(r.Utot), `${r.zones.length} ${r.zones.length === 1 ? 'zona' : 'zones'} · cens ${r.year}`),
+      r.isShare ? kpi('Univers', 'en %', `la base dona percentatges · ${r.year}`, 'warn') : kpi('Univers', fmt(r.Utot), `${r.zones.length} ${r.zones.length === 1 ? 'zona' : 'zones'} · ${r.year}`),
       kpi('Mostra', fmt(r.N), r.main.sum === r.N ? 'la suma de quotes quadra' : `suma ${fmt(r.main.sum)} (${r.main.sum > r.N ? '+' : ''}${r.main.sum - r.N})`, r.main.sum === r.N ? 'ok' : 'warn'),
-      kpi('Error mostral', '±' + M.pct1(d.moe), '95%, p=q=50%'),
+      kpi('Error mostral', '±' + M.pct1(d.moe), r.isShare ? '95%, p=q=50%, població infinita' : '95%, p=q=50%'),
       kpi(`Cel·les ≤ ${thr}`, `${d.small} de ${d.cells}`, M.pct(d.smallPct) + ' de la taula principal', d.smallPct > 0.2 ? 'bad' : d.smallPct > 0.1 ? 'warn' : 'ok'),
     );
     const alerts = h('div', { class: 'alerts' },
@@ -204,7 +246,7 @@
       h('tbody', {}, d.zoneStats.map((z) => h('tr', {}, h('th', {}, z.zona), h('td', {}, fmt(z.censUnivers)), r.ipfApplied ? h('td', {}, fmt(z.univers)) : null,
         h('td', { class: z.quota < 50 ? 'lowz' : '' }, fmt(z.quota)), h('td', {}, M.pct1(z.moe))))))) : null;
     out.replaceChildren(kpis, alerts,
-      h('section', { class: 'res-block' }, h('h3', {}, 'Mida per zona'), zoneTbl || h('p', { class: 'muted' }, 'La taula principal no té zones.')),
+      db.has.zona ? h('section', { class: 'res-block' }, h('h3', {}, 'Mida per zona'), zoneTbl || h('p', { class: 'muted' }, 'La taula principal no té zones.')) : '',
       h('section', { class: 'res-block' }, h('h3', {}, 'Quotes'), dist, r.tables.map((t) => tableView(t, t === r.main ? thr : null))));
   }
 
@@ -266,7 +308,20 @@
     // dades
     $('#db-info').replaceChildren(
       h('strong', {}, dbLabel), h('br'),
-      `${db.munis.length} municipis · ${db.units.length} unitats · anys ${db.years[0]}–${db.years[db.years.length - 1]} · origen: ${db.originVar || '—'} (${db.origins.join(', ')})`);
+      db.has.zona ? `${db.munis.length} municipis · ${db.units.length} unitats · ` : `Àmbit: ${muniLabel()} · `,
+      db.has.any ? `anys ${db.years[0]}–${db.years[db.years.length - 1]}` : 'sense any',
+      db.isShare ? ' · valors en %' : '',
+      h('div', { class: 'vars-avail' }, h('span', {}, 'Variables:'),
+        [['zona', 'zona'], ['sexe', 'sexe'], ['edat', 'edat'], ['origen', db.originVar || 'origen']].map(([k, l]) => h('span', { class: 'chip' + (db.has[k] ? '' : ' no'), title: db.has[k] ? 'disponible' : 'no és a la base' }, l))));
+    document.querySelectorAll('[data-needs]').forEach((el) => { el.hidden = !el.dataset.needs.split(' ').every((k) => db.has[k]); });
+    $('#w-year').hidden = !db.has.any;
+    const fixed = $('#ambit-fixed');
+    fixed.hidden = db.has.zona;
+    fixed.textContent = db.has.zona ? '' : `Àmbit: ${muniLabel()}. La base no té desagregació territorial, així que no hi ha zones.`;
+    const miss = ['edat', 'origen'].filter((k) => !db.has[k]);
+    $('#univ-missing').hidden = !miss.length;
+    $('#univ-missing').textContent = miss.length ? `La base no té ${miss.join(' ni ')}: ${miss.includes('edat') ? 'l\'univers inclou totes les edats.' : ''}` : '';
+    $('#origins-label').textContent = /concepte/i.test(db.originVar || '') ? 'Categories incloses' : 'Origen inclòs a l\'univers';
 
     // estudi
     bind($('#f-estudi'), 'estudi');
@@ -287,7 +342,7 @@
     bind($('#f-minage'), 'minAge');
     bind($('#f-maxage'), 'maxAge');
     bind($('#f-bands'), 'bands');
-    $('#f-origins').replaceChildren(...db.origins.map((o, i) => h('label', { class: 'check' },
+    $('#f-origins').replaceChildren(...db.originLabels.map((o, i) => h('label', { class: 'check' },
       h('input', { type: 'checkbox', checked: state.origins.includes(i), onchange: (e) => {
         state.origins = e.target.checked ? [...new Set(state.origins.concat(i))].sort() : state.origins.filter((x) => x !== i);
         if (!state.origins.length) { state.origins = [i]; e.target.checked = true; }
@@ -465,7 +520,7 @@
       const used = t.cols.filter((_, i) => i !== lvl);
       const sel = h('select', { 'aria-label': `Variable de columna ${lvl + 1}`, disabled: lvl > t.cols.length },
         h('option', { value: '' }, lvl === 0 ? '(cap)' : '—'),
-        VARS.filter(([k]) => !used.includes(k) || k === cur).map(([k, l]) => h('option', { value: k, selected: k === cur }, l)));
+        VARS.filter(([k]) => db.has[k] && (!used.includes(k) || k === cur)).map(([k, l]) => h('option', { value: k, selected: k === cur }, l)));
       sel.onchange = () => {
         const cols = t.cols.slice(0, lvl);
         if (sel.value) cols.push(sel.value, ...t.cols.slice(lvl + 1).filter((v) => v !== sel.value));
@@ -479,7 +534,7 @@
   }
 
   function rowsSelect(t, onChange) {
-    const sel = h('select', { 'aria-label': 'Files' }, h('option', { value: 'zona', selected: t.rows === 'zona' }, 'Zones'), h('option', { value: 'cap', selected: t.rows === 'cap' }, 'Total àmbit'));
+    const sel = h('select', { 'aria-label': 'Files' }, db.has.zona ? h('option', { value: 'zona', selected: t.rows === 'zona' }, 'Zones') : null, h('option', { value: 'cap', selected: t.rows === 'cap' || !db.has.zona }, 'Total àmbit'));
     sel.onchange = () => { t.rows = sel.value; onChange(); };
     return sel;
   }
@@ -515,6 +570,7 @@
   function applyPreset(k) {
     const p = JSON.parse(JSON.stringify(PRESETS[k]));
     state.main = p.main; state.extras = p.extras;
+    sanitize(state);
     if ((k === 'complet' || k === 'marginal') && state.origins.length < 2) state.origins = db.origins.map((o, i) => i);
     renderForm(); schedule();
   }

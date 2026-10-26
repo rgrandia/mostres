@@ -100,4 +100,24 @@ t('agrupa diverses agrupacions censals en un districte', () => {
   assert.strictEqual(r.main.sum, 400);
 });
 
+t('base sense zones ni edat, en percentatges (censph16401cat)', () => {
+  const f = path.join(__dirname, 'fixtures', 'censph16401cat.csv');
+  const pdb = M.parseCensusText(fs.readFileSync(f, 'utf8'), { fileName: 'censph16401cat.csv' });
+  assert.deepStrictEqual(pdb.has, { any: true, zona: false, edat: false, origen: true, sexe: true });
+  assert.ok(pdb.isShare);
+  assert.strictEqual(pdb.territory, 'Catalunya');
+  assert.strictEqual(pdb.originLabels[2], 'nascuda a Catalunya');
+  const cfg = { year: '2025', units: [{ u: 0, zona: 'Catalunya' }], N: 800, origins: [0, 1],
+    main: { rows: 'zona', cols: ['sexe', 'edat', 'origen'] }, extras: [{ rows: 'zona', cols: [], mode: 'derivada' }] };
+  const r = M.compute(pdb, cfg);
+  assert.strictEqual(r.main.rows, 'cap');
+  assert.deepStrictEqual(r.main.vars, ['sexe', 'origen']);
+  assert.deepStrictEqual(r.main.Q, [[320, 80, 329, 71]]);
+  assert.ok(r.warnings.some((w) => /no té edat/.test(w)));
+  assert.ok(r.warnings.some((w) => /mateix pes a cada sexe/.test(w)));
+  // categories que no sumen 100%
+  const bad = M.compute(pdb, Object.assign({}, cfg, { origins: [0, 1, 2, 3, 4, 5], main: { rows: 'cap', cols: ['origen'] } }));
+  assert.ok(bad.warnings.some((w) => /no 100%/.test(w)));
+});
+
 console.log(`\n${ok} tests superats`);

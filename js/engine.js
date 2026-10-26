@@ -24,12 +24,13 @@
 
   const KEYS = {
     any: ['any', 'year', 'año', 'periode', 'període'],
-    zona: ['agrupaci', 'secci', 'districte', 'barri', 'zona', 'municipi'],
+    zona: ['agrupaci', 'secci', 'districte', 'barri', 'zona', 'municipi', 'comarca', 'província', 'provincia', 'territori', 'àmbit', 'ambit', 'vegueria'],
     edat: ['edat', 'edad', 'age'],
     origen: ['nacionalitat', 'nacionalidad', 'lloc de naixement', 'naixement', 'nacimiento', 'origen'],
     sexe: ['sexe', 'sexo', 'gènere', 'genere'],
-    valor: ['valor', 'value', 'població', 'poblacio'],
+    valor: ['valor', 'value'],
     estat: ['estat', 'estado', 'flag'],
+    concepte: ['concepte', 'concepto', 'indicador', 'variable'],
   };
 
   function detectColumns(header) {
@@ -95,9 +96,16 @@
     return art.endsWith("'") ? art + m[1] : art + ' ' + m[1];
   }
 
+  /** "proporció de població nascuda a Catalunya (%)" -> "nascuda a Catalunya". */
+  function niceCategory(label) {
+    return norm(label).replace(/^(proporció|percentatge|taxa|nombre)\s+de\s+(la\s+)?(població\s+)?/i, '').replace(/\s*\((%|‰)\)\s*$/, '');
+  }
+
   /**
-   * Llegeix un CSV del cens en format llarg (una fila per combinació) i el
-   * converteix en el cub intern. Les files de totals s'eliminen.
+   * Llegeix un CSV en format llarg (una fila per combinació) i el converteix en
+   * el cub intern. Només calen una columna de valor i alguna variable: si falta
+   * la zona, l'edat, l'origen o el sexe, aquella variable simplement no s'ofereix.
+   * Les files de totals s'eliminen quan la variable té categories de detall.
    */
   function parseCensusText(text, opts) {
     opts = opts || {};
@@ -108,50 +116,93 @@
     const delim = cand.reduce((a, b) => (first.split(b).length > first.split(a).length ? b : a));
     const header = splitLine(first, delim).map(norm);
     const col = Object.assign(detectColumns(header), opts.columns || {});
-    for (const r of ['zona', 'edat', 'sexe', 'valor']) {
-      if (col[r] == null) throw new Error(`No trobo la columna de «${r}» a la capçalera: ${header.join(' | ')}`);
+    if (col.valor == null) {
+      // sense capçalera «valor»: l'última columna numèrica
+      const sample = splitLine(lines[1] || '', delim);
+      for (let i = header.length - 1; i >= 0; i--) if (!Object.values(col).includes(i) && Number.isFinite(parseNumber(sample[i]))) { col.valor = i; break; }
     }
-    const dims = { any: new Map(), zona: new Map(), edat: new Map(), origen: new Map(), sexe: new Map() };
+    if (col.valor == null) throw new Error(`No trobo la columna de valors a la capçalera: ${header.join(' | ')}`);
+    const assigned = new Set(Object.values(col));
+    const extra = header.map((x, i) => i).filter((i) => !assigned.has(i));
+    // una columna sense nom conegut (p. ex. «Catalunya») és el territori
+    if (col.zona == null && extra.length) { col.zona = extra.shift(); }
+
+    const ROLES = ['any', 'zona', 'edat', 'origen', 'sexe', 'concepte'];
+    const maps = {}; ROLES.forEach((r) => { maps[r] = new Map(); });
     const add = (m, k) => { let i = m.get(k); if (i == null) { i = m.size; m.set(k, i); } return i; };
-    const recs = [];
+    const raw = [];
     let nRows = 0;
     for (let li = 1; li < lines.length; li++) {
       const line = lines[li];
       if (!line) continue;
       const f = splitLine(line, delim);
       nRows++;
-      const z = norm(f[col.zona]), e = norm(f[col.edat]), s = norm(f[col.sexe]);
-      const o = col.origen != null ? norm(f[col.origen]) : 'Tots';
-      const y = col.any != null ? norm(f[col.any]) : '—';
-      if (!z || isTotal(e) || isTotal(s) || (col.origen != null && isTotal(o))) continue;
+      const rec = ROLES.map((r) => add(maps[r], col[r] != null ? norm(f[col[r]]) : ''));
       let v = parseNumber(f[col.valor]);
       if (col.estat != null && norm(f[col.estat]) === '..') v = NaN;
-      recs.push(add(dims.any, y), add(dims.zona, z), add(dims.edat, e), add(dims.origen, o), add(dims.sexe, s), v);
+      rec.push(v);
+      raw.push(rec);
     }
-    if (!recs.length) throw new Error('El fitxer no té cap fila de dades aprofitable.');
-    const ages = [...dims.edat.keys()].map((label) => Object.assign({ label }, parseAge(label)));
-    const bad = ages.filter((a) => a.lo == null);
-    if (bad.length) throw new Error('Etiquetes d\'edat que no sé interpretar: ' + bad.map((a) => a.label).join(', '));
+    if (!raw.length) throw new Error('El fitxer no té cap fila de dades.');
+    const notes = [];
 
-    // ordre: anys numèric, edats per límit inferior; la resta, ordre d'aparició
-    const yearsRaw = [...dims.any.keys()];
+    // concepte amb diverses categories: fa d'origen si no n'hi ha; si no, se'n tria una
+    const concepts = [...maps.concepte.keys()].filter((c) => c !== '');
+    let conceptKeep = null;
+    let originFromConcept = false;
+    if (concepts.length > 1) {
+      if (col.origen == null) originFromConcept = true;
+      else {
+        conceptKeep = concepts.find((c) => /poblaci/i.test(c)) || concepts[0];
+        notes.push(`La columna «${header[col.concepte]}» té diverses categories; es fa servir «${conceptKeep}».`);
+      }
+    }
+    const isShare = /%|proporci|percentatge|taxa/i.test(concepts.join(' ') + ' ' + header[col.valor]);
+
+    // per a cada variable: categories de detall (sense totals) o, si només hi ha totals, una de sola
+    const roleKeys = {};
+    const keep = {};
+    ['any', 'zona', 'edat', 'origen', 'sexe', 'concepte'].forEach((r) => {
+      const keys = [...maps[r].keys()];
+      const detail = keys.filter((k) => k !== '' && !isTotal(k));
+      roleKeys[r] = detail.length ? detail : keys;
+      keep[r] = new Set(roleKeys[r].map((k) => maps[r].get(k)));
+    });
+    if (conceptKeep != null) keep.concepte = new Set([maps.concepte.get(conceptKeep)]);
+    const oRole = originFromConcept ? 'concepte' : 'origen';
+
+    let ages = roleKeys.edat.map((label) => Object.assign({ label }, parseAge(label) || { lo: null, hi: null }));
+    const hasAge = col.edat != null && ages.length > 1;
+    if (hasAge) {
+      const bad = ages.filter((a) => a.lo == null);
+      if (bad.length) throw new Error('Etiquetes d\'edat que no sé interpretar: ' + bad.map((a) => a.label).join(', '));
+    } else ages = [{ label: col.edat != null ? ages[0].label : 'Totes les edats', lo: null, hi: null }];
+
+    const yearsRaw = roleKeys.any.map((y) => y || '—');
     const yOrder = yearsRaw.map((y, i) => i).sort((a, b) => Number(yearsRaw[a]) - Number(yearsRaw[b]));
-    const aOrder = ages.map((a, i) => i).sort((a, b) => ages[a].lo - ages[b].lo);
-    const remap = (order) => { const r = new Array(order.length); order.forEach((old, nw) => { r[old] = nw; }); return r; };
-    const yMap = remap(yOrder), aMap = remap(aOrder);
+    const aOrder = ages.map((a, i) => i).sort((a, b) => (ages[a].lo || 0) - (ages[b].lo || 0));
+    const pos = (r, order) => { const m = new Map(); roleKeys[r].forEach((k, i) => m.set(maps[r].get(k), order ? order.indexOf(i) : i)); return m; };
+    const P = { any: pos('any', yOrder), zona: pos('zona'), edat: hasAge ? pos('edat', aOrder) : null, origen: pos(oRole), sexe: pos('sexe') };
 
+    const territory = roleKeys.zona.length === 1 ? (roleKeys.zona[0] || header[col.zona] || '') : null;
+    const origins = roleKeys[oRole].map((o) => o || 'Tots');
     const db = makeDb({
       years: yOrder.map((i) => yearsRaw[i]),
-      units: [...dims.zona.keys()],
-      ages: aOrder.map((i) => ages[i]),
-      origins: [...dims.origen.keys()],
-      sexes: [...dims.sexe.keys()],
-      originVar: col.origen != null ? header[col.origen] : null,
-      source: { file: opts.fileName || 'cens.csv', rows: nRows, columns: header },
+      units: roleKeys.zona.map((z) => z || territory || 'Total'),
+      ages: hasAge ? aOrder.map((i) => ages[i]) : ages,
+      origins,
+      originLabels: originFromConcept ? origins.map(niceCategory) : origins,
+      sexes: roleKeys.sexe.map((x) => x || 'Total'),
+      originVar: col[oRole] != null && roleKeys[oRole].length > 1 ? header[col[oRole]] : null,
+      isShare,
+      territory,
+      source: { file: opts.fileName || 'dades.csv', rows: nRows, columns: header, notes },
     });
-    for (let i = 0; i < recs.length; i += 6) {
-      const k = db.idx(yMap[recs[i]], recs[i + 1], aMap[recs[i + 2]], recs[i + 3], recs[i + 4]);
-      db.val[k] = recs[i + 5];
+    const R = { any: 0, zona: 1, edat: 2, origen: 3, sexe: 4, concepte: 5 };
+    for (const rec of raw) {
+      if (!['any', 'zona', 'edat', 'origen', 'sexe', 'concepte'].every((r) => keep[r].has(rec[R[r]]))) continue;
+      const k = db.idx(P.any.get(rec[0]), P.zona.get(rec[1]), hasAge ? P.edat.get(rec[2]) : 0, P.origen.get(rec[R[oRole]]), P.sexe.get(rec[4]));
+      db.val[k] = Number.isNaN(db.val[k]) ? rec[6] : db.val[k] + (Number.isNaN(rec[6]) ? 0 : rec[6]);
     }
     return db;
   }
@@ -165,9 +216,19 @@
       origins: d.origins,
       sexes: d.sexes,
       originVar: d.originVar,
+      originLabels: d.originLabels || d.origins,
+      isShare: !!d.isShare,
+      territory: d.territory || null,
       source: d.source || {},
       val: d.val || new Float64Array(nY * nU * nA * nO * nS).fill(NaN),
       idx: (y, u, a, o, s) => ((((y * nU + u) * nA + a) * nO + o) * nS + s),
+    };
+    db.has = {
+      any: !(db.years.length === 1 && db.years[0] === '—'),
+      zona: nU > 1,
+      edat: nA > 1 && db.ages.every((a) => a.lo != null),
+      origen: nO > 1,
+      sexe: nS > 1,
     };
     const munis = new Map();
     db.units.forEach((u, i) => { if (!munis.has(u.muni)) munis.set(u.muni, []); munis.get(u.muni).push(i); });
@@ -186,7 +247,8 @@
   function toCompact(db) {
     return {
       years: db.years, units: db.units.map((u) => u.name), ages: db.ages.map((a) => a.label),
-      origins: db.origins, sexes: db.sexes, originVar: db.originVar, source: db.source,
+      origins: db.origins, originLabels: db.originLabels, sexes: db.sexes, originVar: db.originVar,
+      isShare: db.isShare, territory: db.territory, source: db.source,
       values: Array.from(db.val, (v) => (Number.isNaN(v) ? -1 : Math.round(v * 100) / 100)),
     };
   }
@@ -293,40 +355,48 @@
     cfg.units.forEach((x) => { const z = norm(x.zona) || db.units[x.u].name; if (!zones.includes(z)) zones.push(z); });
     const zoneOf = cfg.units.map((x) => zones.indexOf(norm(x.zona) || db.units[x.u].name));
 
-    // --- edats: franges de quota sobre les franges del cens
-    const minAge = Number(cfg.minAge) || 0;
-    const maxAge = cfg.maxAge == null || cfg.maxAge === '' ? Infinity : Number(cfg.maxAge);
-    const bands = (cfg.bands && cfg.bands.length ? cfg.bands : [minAge]).map(Number).sort((a, b) => a - b);
-    if (bands[0] !== minAge) bands[0] = minAge;
-    const censusLows = db.ages.map((a) => a.lo);
-    const misaligned = bands.slice(1).filter((b) => !censusLows.includes(b));
-    if (misaligned.length) {
-      throw new Error(`Els talls d'edat ${misaligned.join(', ')} no coincideixen amb l'inici de cap franja del cens (${censusLows.join(', ')}).`);
-    }
-    if (Number.isFinite(maxAge) && !db.ages.some((a) => a.hi === maxAge)) {
-      throw new Error(`L'edat màxima ${maxAge} no coincideix amb el final de cap franja del cens.`);
-    }
-    const ageMap = db.ages.map((a) => {
-      const lo = Math.max(a.lo, minAge), hi = Math.min(a.hi, maxAge);
-      if (hi < lo) return null;
-      let frac = 1;
-      if (a.lo < minAge) {
-        if (!Number.isFinite(a.hi)) throw new Error(`La franja oberta «${a.label}» no es pot tallar a ${minAge} anys.`);
-        frac = (hi - lo + 1) / (a.hi - a.lo + 1);
+    // --- edats: franges de quota sobre les franges del cens (si la base en té)
+    let minAge, maxAge, bands, ageMap, labels;
+    if (!db.has.edat) {
+      minAge = null; maxAge = Infinity; bands = [0];
+      ageMap = db.ages.map((a) => ({ band: 0, frac: 1, label: a.label }));
+      labels = ['Totes les edats'];
+      warnings.push('La base no té edat: l\'univers inclou totes les edats, també els menors de 18 anys. Si l\'enquesta és a majors d\'edat, les proporcions poden estar esbiaixades (sobretot l\'origen, perquè la població estrangera és més jove).');
+    } else {
+      minAge = Number(cfg.minAge) || 0;
+      maxAge = cfg.maxAge == null || cfg.maxAge === '' ? Infinity : Number(cfg.maxAge);
+      bands = (cfg.bands && cfg.bands.length ? cfg.bands : [minAge]).map(Number).sort((a, b) => a - b);
+      if (bands[0] !== minAge) bands[0] = minAge;
+      const censusLows = db.ages.map((a) => a.lo);
+      const misaligned = bands.slice(1).filter((b) => !censusLows.includes(b));
+      if (misaligned.length) {
+        throw new Error(`Els talls d'edat ${misaligned.join(', ')} no coincideixen amb l'inici de cap franja del cens (${censusLows.join(', ')}).`);
       }
-      let band = 0;
-      bands.forEach((b, i) => { if (lo >= b) band = i; });
-      return { band, frac, label: a.label };
-    });
-    const partial = ageMap.filter((m) => m && m.frac < 1);
-    partial.forEach((m) => notes.push(`Edat: la franja «${m.label}» del cens entra a l'univers en una proporció de ${fmtFrac(m.frac)} (suposa distribució uniforme dins la franja).`));
-    const labels = cfg.bandLabels && cfg.bandLabels.length === bands.length ? cfg.bandLabels : bandLabels(bands, maxAge);
+      if (Number.isFinite(maxAge) && !db.ages.some((a) => a.hi === maxAge)) {
+        throw new Error(`L'edat màxima ${maxAge} no coincideix amb el final de cap franja del cens.`);
+      }
+      ageMap = db.ages.map((a) => {
+        const lo = Math.max(a.lo, minAge), hi = Math.min(a.hi, maxAge);
+        if (hi < lo) return null;
+        let frac = 1;
+        if (a.lo < minAge) {
+          if (!Number.isFinite(a.hi)) throw new Error(`La franja oberta «${a.label}» no es pot tallar a ${minAge} anys.`);
+          frac = (hi - lo + 1) / (a.hi - a.lo + 1);
+        }
+        let band = 0;
+        bands.forEach((b, i) => { if (lo >= b) band = i; });
+        return { band, frac, label: a.label };
+      });
+      const partial = ageMap.filter((m) => m && m.frac < 1);
+      partial.forEach((m) => notes.push(`Edat: la franja «${m.label}» del cens entra a l'univers en una proporció de ${fmtFrac(m.frac)} (suposa distribució uniforme dins la franja).`));
+      labels = cfg.bandLabels && cfg.bandLabels.length === bands.length ? cfg.bandLabels : bandLabels(bands, maxAge);
+    }
 
     const oIdx = (cfg.origins && cfg.origins.length ? cfg.origins : db.origins.map((o, i) => i)).slice().sort((a, b) => a - b);
     const cats = {
       sexe: db.sexes.map(cap),
       edat: labels,
-      origen: oIdx.map((o) => cap(db.origins[o])),
+      origen: oIdx.map((o) => cap(db.originLabels[o])),
     };
     const nZ = zones.length, nS = cats.sexe.length, nB = bands.length, nO = oIdx.length;
 
@@ -353,7 +423,21 @@
     }
     const census = Float64Array.from(cube);
     const Utot = cube.reduce((a, b) => a + b, 0);
-    if (!(Utot > 0)) throw new Error('L\'univers seleccionat és buit (0 persones). Revisa l\'any, les zones i els filtres.');
+    if (!(Utot > 0)) throw new Error('L\'univers seleccionat és buit. Revisa l\'any, les zones i els filtres.');
+    if (db.isShare) {
+      warnings.push('La base dona percentatges, no persones: les quotes reprodueixen aquestes proporcions i no hi ha un univers en nombre de persones. Quan una variable no es creua (p. ex. el sexe), els seus percentatges es combinen amb el mateix pes.');
+      // les categories triades han de ser excloents i cobrir el total
+      const per = new Map();
+      cfg.units.forEach((x) => db.ages.forEach((a, ai) => db.sexes.forEach((sx, si) => {
+        let sum = 0, any = false;
+        oIdx.forEach((o) => { const v = db.val[db.idx(y, x.u, ai, o, si)]; if (!Number.isNaN(v)) { sum += v; any = true; } });
+        if (any) per.set(`${x.u}|${ai}|${si}`, sum);
+      })));
+      const sums = [...per.values()];
+      if (sums.length && sums.some((v) => Math.abs(v - 100) > 1.5)) {
+        warnings.push(`Les categories triades sumen ${fmtNum(Math.min(...sums))}${Math.max(...sums) - Math.min(...sums) > 0.5 ? '-' + fmtNum(Math.max(...sums)) : ''}%, no 100%: no són excloents o no cobreixen tota la població. Tria un sol grup complet (p. ex. espanyola + estrangera, o els tres llocs de naixement).`);
+      }
+    }
 
     // --- ajust iteratiu dels pesos de zona amb una població externa
     let ipfApplied = false;
@@ -399,7 +483,15 @@
 
     const round = cfg.rounding === 'directe' ? 'directe' : 'lr';
     const tables = [];
-    const mainCfg = cfg.main || { rows: 'zona', cols: ['sexe', 'edat'] };
+    // les variables que la base no té no s'ofereixen: es treuen del disseny
+    const avail = { sexe: db.has.sexe, edat: db.has.edat, origen: db.has.origen };
+    const clean = (t) => {
+      const lost = (t.cols || []).filter((v) => !avail[v]);
+      if (lost.length) notes.push(`La base no té ${lost.map((v) => VAR_NAMES[v].toLowerCase()).join(' ni ')}: s'ha tret del creuament.`);
+      return Object.assign({}, t, { cols: (t.cols || []).filter((v) => avail[v]), rows: db.has.zona ? t.rows : 'cap' });
+    };
+    const mainCfg = clean(cfg.main || { rows: 'zona', cols: ['sexe', 'edat'] });
+    cfg = Object.assign({}, cfg, { extras: (cfg.extras || []).map(clean) });
     const main = buildMain(mainCfg);
     tables.push(main);
 
@@ -490,7 +582,7 @@
     const zeroCols = main.plan.leaves.filter((l) => main.Q.every((r) => r[l.leaf] === 0)).map((l) => l.labels.filter(Boolean).join(' · '));
     const zeroCells = [];
     main.Q.forEach((r, i) => r.forEach((v, j) => { if (v === 0 && main.U[i][j] > 0) zeroCells.push(`${main.rowLabels[i]}: ${main.plan.leaves[j].labels.filter(Boolean).join(' · ')}`); }));
-    const moe = (n, U) => (n > 0 && U > 1 ? 1.96 * Math.sqrt(0.25 / n) * Math.sqrt(Math.max(0, U - n) / (U - 1)) : NaN);
+    const moe = (n, U) => (db.isShare ? (n > 0 ? 1.96 * Math.sqrt(0.25 / n) : NaN) : n > 0 && U > 1 ? 1.96 * Math.sqrt(0.25 / n) * Math.sqrt(Math.max(0, U - n) / (U - 1)) : NaN);
     const zoneStats = main.rows === 'zona' ? zones.map((z, i) => {
       const u = main.U[i].reduce((a, b) => a + b, 0);
       const cu = census.slice(i * nS * nB * nO, (i + 1) * nS * nB * nO).reduce((a, b) => a + b, 0);
@@ -507,21 +599,26 @@
       notes.push(`${thin.length} de ${zoneStats.length} zones tenen menys de 50 entrevistes (entre ${Math.min(...thin.map((z) => z.quota))} i ${Math.max(...thin.map((z) => z.quota))}): serveixen per controlar la distribució territorial, però els seus resultats no són llegibles per separat. Si cal llegir-les, agrupa zones o augmenta la N.`);
     } else thin.forEach((z) => notes.push(`${z.zona}: ${z.quota} entrevistes (error ±${pct1(z.moe)}). Els resultats d'aquesta zona no són llegibles per separat.`));
 
-    const included = oIdx.map((o) => low(db.origins[o]));
-    const varName = low(db.originVar || '');
-    if (/nacionalitat|nacionalidad/.test(varName)) {
+    if (db.isShare && db.has.sexe && tables.some((t) => t.vars.includes('sexe'))) {
+      warnings.push('Amb una base de percentatges, el repartiment entre sexes no surt de les dades: es dona el mateix pes a cada sexe (50%). Si la quota de sexe ha de ser exacta, fes servir una base amb població absoluta.');
+    }
+    const included = oIdx.map((o) => low(db.originLabels[o]));
+    const ovar = low(db.originVar || '');
+    const byBirth = /naixement|nacimiento/.test(ovar) || included.some((x) => /nascud/.test(x));
+    const byNat = /nacionalitat|nacionalidad/.test(ovar) || included.some((x) => /^(espanyola|estrangera)$/.test(x));
+    if (byBirth && !byNat) {
+      warnings.push('Les dades són per lloc de naixement, no per nacionalitat: excloure els nascuts a l\'estranger infraestima els espanyols (deixa fora els nacionalitzats) i incloure\'ls sobreestima l\'electorat.');
+    } else if (byNat && !byBirth) {
       if (included.length === 1 && /espanyol/.test(included[0])) {
         notes.push('Univers de nacionalitat espanyola: s\'aproxima a l\'electorat de les eleccions generals i autonòmiques, però a les municipals també voten els residents de la UE (i d\'alguns països amb conveni), que aquí queden fora.');
       } else if (included.length > 1 && !mainCfg.cols.includes('origen')) {
         notes.push('L\'univers inclou residents de nacionalitat estrangera. Si l\'estudi és de clima electoral, una part d\'aquest univers no té dret a vot.');
       }
-    } else if (/naixement|nacimiento/.test(varName)) {
-      warnings.push('Les dades són per lloc de naixement, no per nacionalitat: excloure els nascuts a l\'estranger infraestima els espanyols (deixa fora els nacionalitzats) i incloure\'ls sobreestima l\'electorat.');
     }
 
     return {
       N, Utot, zones, cats, bands, bandLabels: labels, origins: oIdx, tables, main, cube, census,
-      ipfApplied, year: db.years[y], minAge, maxAge,
+      ipfApplied, year: db.years[y], minAge, maxAge, isShare: db.isShare, has: db.has,
       diag: {
         cells: cells.length, small, smallPct: cells.length ? small / cells.length : 0, threshold: thr,
         zeroCols, zeroCells, zoneStats, moe: moe(N, Utot), confidential,
@@ -542,6 +639,7 @@
   }
 
   function joinCa(parts) { return parts.length < 2 ? parts.join('') : parts.slice(0, -1).join(', ') + ' I ' + parts[parts.length - 1]; }
+  function fmtNum(x) { return (Math.round(x * 10) / 10).toString().replace('.', ','); }
   function pct(x) { return (x * 100).toFixed(0).replace('.', ',') + '%'; }
   function pct1(x) { return Number.isFinite(x) ? (x * 100).toFixed(1).replace('.', ',') + '%' : '—'; }
   function signed(x) { return (x > 0 ? '+' : '') + String(x).replace('.', ','); }

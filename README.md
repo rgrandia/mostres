@@ -26,9 +26,15 @@ alternatives del sistema si no carreguen).
 ## Què fa
 
 1. **Base de dades**: porta inclosa la base `censph16354ac` (2021-2025, 247
-   municipis, 854 agrupacions censals, per nacionalitat). Es pot carregar una
-   base nova (CSV, ZIP o XLSX en format llarg) des del mateix aplicatiu; queda
-   desada al navegador.
+   municipis, 854 agrupacions censals, per nacionalitat). Es pot carregar
+   qualsevol altra taula en format llarg (CSV, ZIP o XLSX), que queda desada al
+   navegador. Només calen una columna de valor i alguna variable: l'aplicatiu
+   detecta quines n'hi ha (any, zona, edat, origen/nacionalitat/lloc de
+   naixement o concepte, sexe) i amaga les opcions de les que falten. Si la
+   taula dona percentatges en lloc de persones (p. ex. `censph16401cat`), les
+   quotes reprodueixen les proporcions i l'aplicatiu avisa de les limitacions
+   (sense univers en persones, sexes amb el mateix pes, categories que no sumen
+   100%).
 2. **Àmbit i zones**: un o diversos municipis. L'editor de zones permet
    marcar agrupacions censals i **agrupar-les en un districte nou**, moure-les a
    una altra zona, treure-les de l'estudi, reanomenar i ordenar les zones, o

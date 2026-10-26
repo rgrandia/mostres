@@ -178,7 +178,7 @@
         put(calc, tr, 3, f(`SUM(C${s.zp + 1}:C${tr - 1})`, 1), { bold: true, fill: GREY, num: '0.0%' });
       }
       const label = isMain ? 'Taula principal' : t.title;
-      titleCell(calc, s.uT, `${label} · Univers${s.zp ? ' ajustat (estructura del cens, pes de zones de la font externa; ajust iteratiu)' : ''}`);
+      titleCell(calc, s.uT, `${label} · ${res.isShare ? 'Pes de cada cel·la (percentatges de la font, no persones)' : 'Univers'}${s.zp ? ' ajustat (estructura del cens, pes de zones de la font externa; ajust iteratiu)' : ''}`);
       const ub = block(calc, s.u0, t, (rr, l) => t.U[rr][l], { num: '#,##0.0' });
       const uTot = AA(ub.tr, ub.totCol);
       s.ub = ub;
@@ -223,10 +223,12 @@
         { bold: true, color: 'FFC00000', al: LEFT, border: false });
     }
     const uMain = lay.get(main).ub;
-    put(resum, 6, 1, 'Error mostral màxim (95%, p=q=50%, m.a.s.):', { bold: true, al: { horizontal: 'right' }, border: false });
-    put(resum, 6, 2, f(`1.96*SQRT(0.25/B4)*SQRT((${CALC}!${AA(uMain.tr, uMain.totCol)}-B4)/(${CALC}!${AA(uMain.tr, uMain.totCol)}-1))`, res.diag.moe),
+    put(resum, 6, 1, res.isShare ? 'Error mostral màxim (95%, p=q=50%, població infinita):' : 'Error mostral màxim (95%, p=q=50%, m.a.s.):', { bold: true, al: { horizontal: 'right' }, border: false });
+    put(resum, 6, 2, res.isShare
+      ? f('1.96*SQRT(0.25/B4)', res.diag.moe)
+      : f(`1.96*SQRT(0.25/B4)*SQRT((${CALC}!${AA(uMain.tr, uMain.totCol)}-B4)/(${CALC}!${AA(uMain.tr, uMain.totCol)}-1))`, res.diag.moe),
       { bold: true, num: '0.0%', border: false });
-    put(resum, 7, 1, `Univers: ${fmtInt(res.Utot)} persones`, { al: LEFT, border: false });
+    put(resum, 7, 1, res.isShare ? 'Univers: la font dona percentatges (sense nombre de persones)' : `Univers: ${fmtInt(res.Utot)} persones`, { al: LEFT, border: false });
 
     res.tables.forEach((t) => {
       const s = rl.get(t);
@@ -277,7 +279,7 @@
     dz.getColumn(1).width = 34; dz.getColumn(2).width = 90;
     const rows = [
       ['Estudi', meta.estudi], ['Municipi / àmbit', meta.municipi], ['Any del cens', res.year],
-      ['Fitxer de dades', meta.fitxer], ['Univers', meta.univers], ['Edat', `${res.minAge}${Number.isFinite(res.maxAge) ? '-' + res.maxAge : ' i més'} anys`],
+      ['Fitxer de dades', meta.fitxer], ['Univers', meta.univers], ['Edat', res.has.edat ? `${res.minAge}${Number.isFinite(res.maxAge) ? '-' + res.maxAge : ' i més'} anys` : 'La base no té edat (totes les edats)'],
       ['Franges d\'edat', res.bandLabels.join(', ')], ['Origen inclòs', res.cats.origen.join(', ')],
       ['Taula principal', main.title], ['Arrodoniment', cfg.rounding === 'directe' ? 'ROUND directe cel·la a cel·la' : 'Restes majors (primer per zona, després dins de cada zona)'],
       ['Pes de zones', res.ipfApplied ? 'Ajustat a població externa (IPF)' : 'Proporcional al cens'],

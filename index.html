@@ -74,6 +74,9 @@ input[type=text], input[type=number], input:not([type]), select { border: 1px so
 input.n-cell { background: var(--mark); color: var(--mark-ink); font-weight: 600; font-family: var(--f-num); font-size: 16px; border-color: transparent; }
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .check { display: inline-flex; gap: 6px; align-items: center; margin-right: 14px; }
+.origins { display: flex; flex-wrap: wrap; gap: 2px 0; }
+.vars-avail { font-size: 12px; display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.vars-avail .chip.no { opacity: .5; text-decoration: line-through; }
 .row-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .muted { color: var(--muted); }
 #db-info { font-size: 12.5px; color: var(--muted); }
@@ -176,7 +179,7 @@ table.zones td { min-width: 90px; }
         <span class="file btn small">Carrega una base nova…<input id="f-file" type="file" accept=".csv,.zip,.xlsx,.txt" aria-label="Carrega una base de dades"></span>
         <button id="db-reset" class="link" type="button" hidden>Torna a la base inclosa</button>
       </div>
-      <span class="f-hint">CSV, ZIP o XLSX en format llarg d'Idescat (any, agrupació censal, edat, nacionalitat o lloc de naixement, sexe, valor). Es queda desada en aquest navegador.</span>
+      <span class="f-hint">CSV, ZIP o XLSX en format llarg (una fila per combinació i una columna de valor), com els d'Idescat. Les variables que el fitxer no tingui (zona, edat, origen, sexe) no s'ofereixen. Es queda desada en aquest navegador.</span>
       <span id="db-status" role="status"></span>
     </section>
 
@@ -195,9 +198,11 @@ table.zones td { min-width: 90px; }
     <section class="step">
       <h2><span class="n">3</span>Àmbit i zones</h2>
       <div class="grid2">
-        <label class="field"><span class="f-label">Any del cens</span><select id="f-year"></select></label>
-        <label class="field"><span class="f-label">En afegir</span><select id="f-muni-mode"><option value="replace">Substitueix</option><option value="add">Suma a l'àmbit</option></select></label>
+        <label class="field" id="w-year"><span class="f-label">Any</span><select id="f-year"></select></label>
+        <label class="field" data-needs="zona"><span class="f-label">En afegir</span><select id="f-muni-mode"><option value="replace">Substitueix</option><option value="add">Suma a l'àmbit</option></select></label>
       </div>
+      <p id="ambit-fixed" class="f-hint" hidden></p>
+      <div data-needs="zona" class="zone-tools-wrap" style="display:flex;flex-direction:column;gap:10px">
       <div class="field"><span class="f-label">Municipi</span>
         <div class="row-actions" style="flex-wrap:nowrap"><input id="f-muni" list="munis" placeholder="Escriu un municipi…" aria-label="Municipi"><button id="add-muni" class="btn small" type="button">Tria</button></div>
         <datalist id="munis"></datalist><span id="muni-msg" role="status"></span>
@@ -209,25 +214,27 @@ table.zones td { min-width: 90px; }
         <button id="z-one" class="btn small" type="button">Tot en una</button></div>
       <label class="check"><input id="f-usezp" type="checkbox">Ajusta el pes de les zones amb una població externa</label>
       <div id="units"></div>
+      </div>
     </section>
 
     <section class="step">
       <h2><span class="n">4</span>Univers</h2>
-      <div class="grid2">
+      <div class="grid2" data-needs="edat">
         <label class="field"><span class="f-label">Edat mínima</span><input id="f-minage" type="number" min="0"></label>
         <label class="field"><span class="f-label">Edat màxima</span><input id="f-maxage" type="number" min="0" placeholder="sense límit"></label>
       </div>
-      <label class="field"><span class="f-label">Franges d'edat (inici de cada franja)</span><input id="f-bands" type="text"><span class="f-hint">Els talls han de coincidir amb les franges quinquennals del cens (20, 25, 30…).</span></label>
-      <div class="field"><span class="f-label">Origen inclòs a l'univers</span><div id="f-origins"></div></div>
+      <label class="field" data-needs="edat"><span class="f-label">Franges d'edat (inici de cada franja)</span><input id="f-bands" type="text"><span class="f-hint">Els talls han de coincidir amb les franges quinquennals del cens (20, 25, 30…).</span></label>
+      <div class="field" data-needs="origen"><span class="f-label" id="origins-label">Origen inclòs a l'univers</span><div id="f-origins" class="origins"></div></div>
+      <p id="univ-missing" class="f-hint" hidden></p>
     </section>
 
     <section class="step">
       <h2><span class="n">5</span>Taules i creuaments</h2>
       <div class="row-actions"><span class="f-hint">Models:</span>
-        <button class="btn small" type="button" data-preset="plantilla">Zona × sexe × edat</button>
-        <button class="btn small" type="button" data-preset="complet">Creuament complet amb origen</button>
-        <button class="btn small" type="button" data-preset="marginal">Origen marginal</button>
-        <button class="btn small" type="button" data-preset="municipi">Sense zones</button></div>
+        <button class="btn small" type="button" data-preset="plantilla" data-needs="zona edat sexe">Zona × sexe × edat</button>
+        <button class="btn small" type="button" data-preset="complet" data-needs="origen">Creuament complet amb origen</button>
+        <button class="btn small" type="button" data-preset="marginal" data-needs="zona origen">Origen marginal</button>
+        <button class="btn small" type="button" data-preset="municipi" data-needs="zona">Sense zones</button></div>
       <div class="extra"><div class="extra-head"><strong>Taula principal</strong><span class="f-hint">la que va a camp</span></div><div id="main-design"></div></div>
       <div id="extras" style="display:flex;flex-direction:column;gap:8px"></div>
       <div><button id="add-extra" class="btn small" type="button">Afegeix una taula</button></div>
