@@ -29,10 +29,11 @@ alternatives del sistema si no carreguen).
    municipis, 854 agrupacions censals, per nacionalitat). Es pot carregar una
    base nova (CSV, ZIP o XLSX en format llarg) des del mateix aplicatiu; queda
    desada al navegador.
-2. **Àmbit i zones**: un o diversos municipis; cada agrupació censal es pot
-   reanomenar, agrupar amb altres (mateix nom de zona) o excloure. Opcionalment,
-   el pes de les zones s'ajusta per iteració (IPF) a una població externa
-   (p. ex. el padró per nuclis que dona el client).
+2. **Àmbit i zones**: un o diversos municipis. L'editor de zones permet
+   marcar agrupacions censals i **agrupar-les en un districte nou**, moure-les a
+   una altra zona, treure-les de l'estudi, reanomenar i ordenar les zones, o
+   desfer un districte. Opcionalment, el pes de les zones s'ajusta per iteració
+   (IPF) a una població externa (p. ex. el padró per nuclis que dona el client).
 3. **Univers**: edat mínima i màxima, franges d'edat (la franja partida es
    prorrateja: 18-19 = 2/5 de 15-19) i nacionalitats incloses.
 4. **Taules i creuaments**: taula principal (zones × fins a tres variables:
@@ -52,7 +53,9 @@ alternatives del sistema si no carreguen).
   grogues editables, calculat per restes majors per a la N de l'aplicatiu) i
   quota final. Si es canvia la N a l'Excel, `Resum!A5` avisa que l'ajust s'ha de
   revisar.
-- `Disseny`: els paràmetres i la configuració en JSON.
+- `Disseny`: els paràmetres, la composició de cada zona (agrupacions i univers)
+  i la configuració en JSON. Les zones agrupades també es llisten a les notes del
+  `Resum`.
 - `Font - cens AAAA`: les files del cens utilitzades, com a valors.
 
 ## Actualitzar la base inclosa

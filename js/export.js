@@ -262,7 +262,10 @@
     });
 
     let nr = notesRow;
-    const notes = [].concat(meta.notes || [], res.notes, res.warnings);
+    const comp = composition(db, cfg, res);
+    const merged = comp.filter((z) => z.units.length > 1)
+      .map((z) => `${z.zona}: ${z.units.map((u) => u.name).join('; ')}.`);
+    const notes = [].concat(meta.notes || [], merged.length ? ['Composició de les zones agrupades (agrupacions censals) -> ' + merged.join(' ')] : [], res.notes, res.warnings);
     if (notes.length) {
       titleCell(resum, nr++, 'Notes:');
       notes.forEach((n) => { put(resum, nr++, 1, '- ' + n, { al: LEFT, border: false }); });
@@ -278,12 +281,28 @@
       ['Franges d\'edat', res.bandLabels.join(', ')], ['Origen inclòs', res.cats.origen.join(', ')],
       ['Taula principal', main.title], ['Arrodoniment', cfg.rounding === 'directe' ? 'ROUND directe cel·la a cel·la' : 'Restes majors (primer per zona, després dins de cada zona)'],
       ['Pes de zones', res.ipfApplied ? 'Ajustat a població externa (IPF)' : 'Proporcional al cens'],
-      ['Zones', cfg.units.map((x) => `${db.units[x.u].name} → ${x.zona}`).join('\n')],
       ['Configuració (JSON)', JSON.stringify(cfg)],
     ];
     rows.forEach(([k, v], i) => {
       put(dz, i + 1, 1, k, { bold: true, al: LEFT, fill: LGREY });
       put(dz, i + 1, 2, v == null ? '' : String(v), { al: { horizontal: 'left', vertical: 'top', wrapText: true } });
+    });
+    // composició de cada zona, amb l'univers de cada agrupació
+    let zr = rows.length + 3;
+    dz.getColumn(3).width = 14;
+    put(dz, zr - 1, 1, 'Composició de les zones', { bold: true, al: LEFT, border: false });
+    ['Zona', 'Agrupació censal', 'Univers (cens)'].forEach((x, i) => put(dz, zr, i + 1, x, { bold: true, fill: GREY }));
+    comp.forEach((z) => {
+      z.units.forEach((u, k) => {
+        zr++;
+        put(dz, zr, 1, k === 0 ? z.zona : '', { bold: k === 0, al: LEFT });
+        put(dz, zr, 2, u.name, { al: LEFT });
+        put(dz, zr, 3, u.univers, { num: '#,##0' });
+      });
+      zr++;
+      put(dz, zr, 1, 'Total ' + z.zona, { bold: true, fill: LGREY, al: LEFT });
+      put(dz, zr, 2, `${z.units.length} ${z.units.length === 1 ? 'agrupació' : 'agrupacions'}`, { fill: LGREY, al: LEFT });
+      put(dz, zr, 3, z.units.reduce((a, u) => a + u.univers, 0), { bold: true, fill: LGREY, num: '#,##0' });
     });
 
     // ---------------- traçabilitat: files del cens utilitzades
@@ -293,6 +312,20 @@
     M.sourceRows(db, cfg).forEach((row) => fs.addRow(row));
     [8, 60, 18, 14, 10, 10, 8].forEach((w, i) => { fs.getColumn(i + 1).width = w; });
     return wb;
+  }
+
+  /** Agrupacions de cada zona amb el seu univers (cens, sense ajust de pes). */
+  function composition(db, cfg, res) {
+    return res.zones.map((z) => ({
+      zona: z,
+      units: cfg.units.filter((x) => x.zona === z).map((x) => {
+        let univers = 0;
+        try {
+          univers = M.compute(db, Object.assign({}, cfg, { units: [{ u: x.u, zona: z }], useZonePop: false, extras: [], main: { rows: 'cap', cols: [] } })).Utot;
+        } catch (e) { /* agrupació sense dades (secret estadístic): univers 0 */ }
+        return { name: db.units[x.u].name, univers };
+      }),
+    }));
   }
 
   function fmtInt(x) { return Math.round(x).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.'); }

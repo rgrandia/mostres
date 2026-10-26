@@ -85,4 +85,19 @@ t('rebutja talls d\'edat que no quadren amb el cens', () => {
   assert.throws(() => M.compute(db, Object.assign({}, base, { bands: [18, 33] })), /no coincideixen/);
 });
 
+t('agrupa diverses agrupacions censals en un districte', () => {
+  const bdn = M.defaultZones(db, 'Badalona');
+  assert.strictEqual(bdn.length, 30);
+  const cfg = Object.assign({}, base, { units: bdn.map((z) => ({ u: z.u, zona: z.u === bdn[0].u || z.u === bdn[1].u || z.u === bdn[2].u ? 'Districte 1' : z.zona })) });
+  const sep = M.compute(db, Object.assign({}, base, { units: bdn }));
+  const r = M.compute(db, cfg);
+  assert.strictEqual(r.zones.length, 28);
+  assert.strictEqual(r.zones[0], 'Districte 1');
+  assert.ok(Math.abs(r.Utot - sep.Utot) < 1e-6);
+  const d1 = r.main.U[0].reduce((a, b) => a + b, 0);
+  const parts = [0, 1, 2].map((i) => sep.main.U[i].reduce((a, b) => a + b, 0)).reduce((a, b) => a + b, 0);
+  assert.ok(Math.abs(d1 - parts) < 1e-6);
+  assert.strictEqual(r.main.sum, 400);
+});
+
 console.log(`\n${ok} tests superats`);
