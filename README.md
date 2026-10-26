@@ -7,6 +7,22 @@ enganxats), amb la mateixa estructura que els llibres `NNNN_EnqMunicipi_AAAA_Mos
 Funciona sense servidor: obre `index.html` (o la versió publicada) i tot es
 calcula al navegador.
 
+## Desplegament a Vercel
+
+És un lloc estàtic: no cal compilar res ni cap servidor.
+
+1. A [vercel.com/new](https://vercel.com/new), importa el repositori `rgrandia/mostres`.
+2. Deixa *Framework Preset* = **Other** i no omplis ni *Build Command* ni
+   *Output Directory* (ja ho fixa `vercel.json`).
+3. *Deploy*. Cada push a `main` torna a desplegar automàticament.
+
+Per limitar-ne l'accés a l'equip, activa *Settings → Deployment Protection*
+(Vercel Authentication) al projecte.
+
+Les llibreries (ExcelJS 4.4.0 i JSZip 3.10.1) són a `vendor/`, de manera que
+l'aplicatiu no depèn de cap CDN extern (només les fonts de Google, amb
+alternatives del sistema si no carreguen).
+
 ## Què fa
 
 1. **Base de dades**: porta inclosa la base `censph16354ac` (2021-2025, 247
@@ -40,6 +56,10 @@ calcula al navegador.
 - `Font - cens AAAA`: les files del cens utilitzades, com a valors.
 
 ## Actualitzar la base inclosa
+
+Una base carregada des de l'aplicatiu només queda desada en aquell navegador.
+Perquè tot l'equip tingui la base nova per defecte, cal regenerar
+`data/cens-base.js` i fer push a `main` (Vercel la publica sola):
 
 ```bash
 node tools/build-base.js ruta/al/cens.zip   # o .csv
