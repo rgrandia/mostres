@@ -152,6 +152,7 @@ table.q td.small { background: var(--bad-bg); color: var(--bad); font-weight: 60
 table.q td.lowz { color: var(--warn); font-weight: 600; }
 table.q tr.total th, table.q tr.total td { background: var(--head); font-weight: 600; }
 table.zones td { min-width: 90px; }
+.empty p { margin: 0; max-width: 65ch; color: var(--muted); }
 .legend { font-size: 12px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 12px; }
 .sw { display: inline-block; width: 12px; height: 12px; border-radius: 2px; vertical-align: -2px; margin-right: 4px; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
@@ -186,7 +187,7 @@ table.zones td { min-width: 90px; }
     <section class="step">
       <h2><span class="n">2</span>Estudi</h2>
       <div class="grid2">
-        <label class="field"><span class="f-label">Núm. d'estudi</span><input id="f-estudi" type="text"></label>
+        <label class="field"><span class="f-label">Núm. d'estudi</span><input id="f-estudi" type="text" placeholder="XXXX"></label>
         <label class="field"><span class="f-label">Any de l'estudi</span><input id="f-anyestudi" type="text" inputmode="numeric"></label>
       </div>
       <label class="field"><span class="f-label">Títol de la taula principal</span><input id="f-titol" type="text"></label>

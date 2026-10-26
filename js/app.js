@@ -27,11 +27,12 @@
 
   // ------------------------------------------------------------ estat i persistència
   function defaultState() {
-    const muni = db.munis.find((m) => m.name === 'Sant Pere de Ribes') || db.munis[0];
+    // l'aplicatiu s'obre en blanc: sense municipi triat (si la base té zones)
+    const muni = db.has.zona ? null : db.munis[0];
     return {
-      estudi: 'XXXX', anyEstudi: String(new Date().getFullYear()), titol: '', univers: '', font: '',
-      year: db.years[db.years.length - 1], munis: [muni.name],
-      units: M.defaultZones(db, muni.name).map((z) => Object.assign(z, { inc: true, name: db.units[z.u].name })),
+      estudi: '', anyEstudi: String(new Date().getFullYear()), titol: '', univers: '', font: '',
+      year: db.years[db.years.length - 1], munis: muni ? [muni.name] : [],
+      units: muni ? M.defaultZones(db, muni.name).map((z) => Object.assign(z, { inc: true, name: db.units[z.u].name })) : [],
       minAge: 18, maxAge: '', bands: '18, 30, 45, 60',
       origins: defaultOrigins(),
       N: 400, rounding: 'lr', threshold: 2, cawiPct: 0,
@@ -72,7 +73,7 @@
     if (!db.years.includes(String(st.year))) st.year = db.years[db.years.length - 1];
     return st;
   }
-  function save() { try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); } catch (e) { /* sense emmagatzematge */ } }
+  function save() { if (!state.units.some((x) => x.inc)) return; try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); } catch (e) { /* sense emmagatzematge */ } }
   function load() {
     try {
       const s = JSON.parse(localStorage.getItem(STORE_KEY) || 'null');
@@ -83,7 +84,7 @@
         if (s.units.length && s.munis.length) return sanitize(Object.assign(defaultState(), s));
       }
     } catch (e) { /* configuració antiga o malmesa */ }
-    return defaultState();
+    return null;
   }
 
   const idb = {
@@ -201,6 +202,18 @@
 
   function recompute() {
     const out = $('#results');
+    if (!state.units.some((x) => x.inc)) {
+      result = null;
+      const saved = load();
+      out.replaceChildren(h('section', { class: 'res-block empty' },
+        h('h3', {}, 'Tria l\'àmbit de l\'estudi'),
+        h('p', {}, 'Escriu un municipi al pas 3 («Àmbit i zones») i prem «Tria». Les zones, les quotes i el diagnòstic apareixeran aquí.'),
+        saved ? h('p', {}, h('button', { type: 'button', class: 'btn', onclick: () => { state = saved; renderAll(); } },
+          `Recupera l'últim disseny (${saved.munis.map(M.niceMuni).join(', ')}${saved.estudi ? ' · estudi ' + saved.estudi : ''})`)) : null));
+      $('#export').disabled = true;
+      $('#fname').textContent = '';
+      return;
+    }
     try {
       result = M.compute(db, engineCfg());
       renderResults();
@@ -628,14 +641,14 @@
         $('#db-reset').hidden = false;
       }
     } catch (e) { /* sense IndexedDB: es fa servir la base inclosa */ }
-    state = load();
+    state = defaultState();
     $('#f-file').addEventListener('change', (e) => { if (e.target.files[0]) onUpload(e.target.files[0]).then(() => { $('#db-reset').hidden = false; }); e.target.value = ''; });
     $('#db-reset').addEventListener('click', async () => {
       try { await idb.del('custom'); } catch (e) { /* res */ }
       db = M.fromCompact(window.CENS_BASE);
       dbLabel = `Base inclosa: ${window.CENS_BASE.source.file} (actualitzada ${window.CENS_BASE.source.loaded || ''})`;
       $('#db-reset').hidden = true; $('#db-status').textContent = 'S\'ha tornat a la base inclosa.';
-      state = load(); renderAll();
+      state = defaultState(); renderAll();
     });
     $('#add-muni').addEventListener('click', addMuni);
     $('#f-muni').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); addMuni(); } });
@@ -645,7 +658,12 @@
     $('#add-extra').addEventListener('click', () => { state.extras.push({ rows: 'cap', cols: ['sexe'], mode: 'derivada' }); renderDesign(); schedule(); });
     document.querySelectorAll('[data-preset]').forEach((b) => b.addEventListener('click', () => applyPreset(b.dataset.preset)));
     $('#export').addEventListener('click', exportXlsx);
-    $('#reset-cfg').addEventListener('click', () => { state = defaultState(); renderAll(); save(); });
+    $('#reset-cfg').addEventListener('click', () => {
+      // restableix el disseny de la mostra però manté l'àmbit i les zones
+      const d = defaultState();
+      ['minAge', 'maxAge', 'bands', 'origins', 'N', 'rounding', 'threshold', 'cawiPct', 'main', 'extras'].forEach((k) => { state[k] = d[k]; });
+      renderAll(); save();
+    });
     renderAll();
   }
   document.addEventListener('DOMContentLoaded', init);
