@@ -1,5 +1,7 @@
 # Generador de mostres
 
+Amb l'estil de GESOP (blau corporatiu, Montserrat, logotip a `img/`).
+
 Aplicatiu web per dissenyar mostres per quotes a partir del cens per agrupació
 censal d'Idescat i exportar-les a un llibre Excel viu (fórmules, no valors
 enganxats), amb la mateixa estructura que els llibres `NNNN_EnqMunicipi_AAAA_Mostra.xlsx`.
@@ -35,11 +37,13 @@ alternatives del sistema si no carreguen).
    quotes reprodueixen les proporcions i l'aplicatiu avisa de les limitacions
    (sense univers en persones, sexes amb el mateix pes, categories que no sumen
    100%).
-2. **Àmbit i zones**: un o diversos municipis. L'editor de zones permet
-   marcar agrupacions censals i **agrupar-les en un districte nou**, moure-les a
-   una altra zona, treure-les de l'estudi, reanomenar i ordenar les zones, o
-   desfer un districte. Opcionalment, el pes de les zones s'ajusta per iteració
-   (IPF) a una població externa (p. ex. el padró per nuclis que dona el client).
+2. **Àmbit i zones**: un o diversos municipis. «Organitza els districtes» obre
+   un editor on s'arrosseguen les agrupacions censals a un districte o a «Nou
+   districte» (o es marquen i es mouen amb la barra d'accions, també en pantalles
+   tàctils). Cada agrupació que no és en cap districte és una zona per si sola.
+   Mostra l'univers de cada agrupació i la quota de cada districte per poder-los
+   equilibrar. Opcionalment, el pes de les zones s'ajusta per iteració (IPF) a una
+   població externa (p. ex. el padró per nuclis que dona el client).
 3. **Univers**: edat mínima i màxima, franges d'edat (la franja partida es
    prorrateja: 18-19 = 2/5 de 15-19) i nacionalitats incloses.
 4. **Taules i creuaments**: taula principal (zones × fins a tres variables:

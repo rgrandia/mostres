@@ -37,7 +37,7 @@
       origins: defaultOrigins(),
       N: 400, rounding: 'lr', threshold: 2, cawiPct: 0,
       ...defaultDesign(),
-      useZonePop: false, zonePop: {},
+      useZonePop: false, zonePop: {}, districts: [],
     };
   }
   function defaultOrigins() {
@@ -227,7 +227,9 @@
     $('#f-font').placeholder = t.font;
     $('#f-titol').placeholder = result ? result.main.title : '';
     $('#fname').textContent = fileName();
-    if (!document.activeElement || !document.activeElement.closest('#units')) renderZones();
+    const act = document.activeElement;
+    if (!act || !act.closest('#units')) renderZones();
+    if (!act || !act.closest('#districts') || act.id === 'd-search' || act.type === 'checkbox') renderDistricts();
   }
 
   function fileName() {
@@ -375,6 +377,8 @@
   }
 
   function renderUnits() {
+    normalize();
+    $('#z-muni').hidden = state.munis.length < 2;
     $('#muni-chips').replaceChildren(...state.munis.map((m) => h('span', { class: 'chip big' }, M.niceMuni(m),
       state.munis.length > 1 ? h('button', { type: 'button', class: 'x', 'aria-label': 'Treu ' + M.niceMuni(m), onclick: () => {
         state.munis = state.munis.filter((x) => x !== m);
@@ -387,116 +391,246 @@
     renderZones();
   }
 
-  // ------------------------------------------------------------ editor de zones (districtes)
+  // ------------------------------------------------------------ zones i districtes
+  // Cada agrupació censal és una zona per si sola («solta») fins que s'afegeix a
+  // un districte. Els districtes són noms a state.districts, en ordre.
   const selected = new Set();
+  let unitUniv = new Map();
+  let univKey = '';
+  let focusDistrict = null;
+
   const zoneList = () => [...new Set(state.units.filter((x) => x.inc).map((x) => x.zona))];
+  const districts = () => (state.districts || (state.districts = []));
+  const isDistrict = (z) => districts().includes(z);
   const unitLabel = (u) => {
     const x = db.units[u];
     const lab = x.num ? `${x.num}. ${x.desc}` : x.desc;
-    return state.munis.length > 1 ? `${M.niceMuni(x.muni)} ${lab}` : lab;
+    return state.munis.length > 1 ? `${M.niceMuni(x.muni)} · ${lab}` : lab;
   };
-  function newZoneName() {
-    const z = zoneList();
-    let n = z.length + 1;
-    while (z.includes('Districte ' + n)) n++;
+  /** Nom de zona d'una agrupació solta: la descripció, o el nom complet si es repeteix. */
+  function looseName(u, taken) {
+    let n = state.munis.length > 1 ? db.units[u].name : cap(db.units[u].desc);
+    if (taken && taken.has(n)) n = db.units[u].name;
+    return n;
+  }
+  function newDistrictName() {
+    const z = new Set(zoneList().concat(districts()));
+    let n = 1;
+    while (z.has('Districte ' + n)) n++;
     return 'Districte ' + n;
   }
-  function moveUnits(units, zona) {
-    const before = zoneList();
-    state.units.forEach((x) => { if (units.has(x.u)) { if (!x.inc) x.inc = true; x.zona = zona; } });
-    // la població externa d'una zona que desapareix es descarta
-    before.filter((z) => !zoneList().includes(z)).forEach((z) => { delete state.zonePop[z]; });
-    selected.clear();
-    renderZones(); schedule();
+  /** Ordre de les zones: districtes en el seu ordre, després les soltes, després les excloses. */
+  function normalize() {
+    const ds = districts();
+    // un districte de l'estat antic (zona amb diverses agrupacions) passa a la llista
+    zoneList().forEach((z) => {
+      if (!ds.includes(z) && state.units.filter((x) => x.inc && x.zona === z).length > 1) ds.push(z);
+    });
+    const base = new Map();
+    state.units.forEach((x, i) => base.set(x.u, i));
+    const rank = (x) => (!x.inc ? 2e6 : isDistrict(x.zona) ? ds.indexOf(x.zona) * 1e3 : 1e6);
+    state.units.sort((a, b) => rank(a) - rank(b) || db.units[a.u].muni.localeCompare(db.units[b.u].muni) || db.units[a.u].num - db.units[b.u].num || base.get(a.u) - base.get(b.u));
   }
-  function excludeUnits(units) {
-    state.units.forEach((x) => { if (units.has(x.u)) x.inc = false; });
-    selected.clear();
-    renderZones(); schedule();
+  function changed() { normalize(); selected.clear(); renderZones(); renderDistricts(); schedule(); }
+
+  function moveTo(ids, zona) {
+    if (!isDistrict(zona)) districts().push(zona);
+    state.units.forEach((x) => { if (ids.has(x.u)) { x.inc = true; x.zona = zona; } });
+    changed();
   }
-  function renameZone(prev, next) {
+  function newDistrict(ids) {
+    const name = newDistrictName();
+    focusDistrict = name;
+    if (ids && ids.size) moveTo(ids, name);
+    else { districts().push(name); changed(); }
+  }
+  function makeLoose(ids) {
+    const taken = new Set(zoneList());
+    state.units.forEach((x) => {
+      if (!ids.has(x.u)) return;
+      x.inc = true;
+      if (isDistrict(x.zona) || !x.zona) { taken.delete(x.zona); x.zona = looseName(x.u, taken); taken.add(x.zona); }
+    });
+    changed();
+  }
+  function exclude(ids) { state.units.forEach((x) => { if (ids.has(x.u)) x.inc = false; }); changed(); }
+  function deleteDistrict(z) {
+    const ids = new Set(state.units.filter((x) => x.zona === z).map((x) => x.u));
+    state.districts = districts().filter((d) => d !== z);
+    delete state.zonePop[z];
+    makeLoose(ids);
+  }
+  function renameDistrict(prev, next) {
     next = next.trim();
-    if (!next || next === prev) { renderZones(); return; }
-    const merges = zoneList().includes(next);
-    state.units.forEach((x) => { if (x.inc && x.zona === prev) x.zona = next; });
+    if (!next || next === prev) { renderDistricts(); return; }
+    const ds = districts();
+    const merges = zoneList().includes(next) || ds.includes(next);
+    state.units.forEach((x) => { if (x.zona === prev) x.zona = next; });
+    if (merges) state.districts = ds.filter((d) => d !== prev);
+    else ds[ds.indexOf(prev)] = next;
+    if (!isDistrict(next)) districts().push(next);
     if (state.zonePop[prev] != null) {
-      if (merges) state.zonePop[next] = (Number(state.zonePop[next]) || 0) + (Number(state.zonePop[prev]) || 0);
-      else state.zonePop[next] = state.zonePop[prev];
+      state.zonePop[next] = (merges ? Number(state.zonePop[next]) || 0 : 0) + (Number(state.zonePop[prev]) || 0);
       delete state.zonePop[prev];
     }
-    renderZones(); schedule();
+    changed();
   }
-  function moveZone(z, dir) {
-    const order = zoneList();
-    const i = order.indexOf(z), j = i + dir;
-    if (j < 0 || j >= order.length) return;
-    [order[i], order[j]] = [order[j], order[i]];
-    const rank = (x) => (x.inc ? order.indexOf(x.zona) : order.length);
-    state.units = state.units.map((x, k) => [x, k]).sort((a, b) => rank(a[0]) - rank(b[0]) || a[1] - b[1]).map((p) => p[0]);
-    renderZones(); schedule();
+  function moveDistrict(z, dir) {
+    const ds = districts();
+    const i = ds.indexOf(z), j = i + dir;
+    if (j < 0 || j >= ds.length) return;
+    [ds[i], ds[j]] = [ds[j], ds[i]];
+    changed();
   }
 
+  /** Univers de cada agrupació amb els filtres actuals (per equilibrar districtes). */
+  function refreshUnitUniv() {
+    const units = state.units.map((x) => ({ u: x.u, zona: 'u' + x.u }));
+    const cfg = Object.assign(engineCfg(), { units, main: { rows: 'zona', cols: [] }, extras: [], useZonePop: false });
+    const key = JSON.stringify([cfg.year, cfg.minAge, cfg.maxAge, cfg.origins, units.length, units.map((x) => x.u)]);
+    if (key === univKey) return;
+    univKey = key;
+    unitUniv = new Map();
+    if (!units.length) return;
+    try { M.compute(db, cfg).diag.zoneStats.forEach((z) => unitUniv.set(Number(z.zona.slice(1)), z.censUnivers)); } catch (e) { /* sense univers */ }
+  }
+
+  // ------------------------------------------------------------ resum al panell lateral
   function renderZones() {
-    const zones = zoneList();
+    const box = $('#units');
+    if (!box) return;
     const stats = new Map(result && result.diag ? result.diag.zoneStats.map((z) => [z.zona, z]) : []);
-    const unitRow = (x) => h('label', { class: 'unit' + (selected.has(x.u) ? ' sel' : '') },
-      h('input', { type: 'checkbox', checked: selected.has(x.u), 'aria-label': 'Selecciona ' + db.units[x.u].name,
-        onchange: (e) => { if (e.target.checked) selected.add(x.u); else selected.delete(x.u); renderZones(); } }),
-      h('span', { class: 'u-name', title: db.units[x.u].name }, unitLabel(x.u)));
-
-    const cards = zones.map((z, zi) => {
-      const members = state.units.filter((x) => x.inc && x.zona === z);
+    const inc = state.units.filter((x) => x.inc);
+    if (!state.units.length) { box.replaceChildren(); return; }
+    const ds = districts().filter((d) => inc.some((x) => x.zona === d));
+    const loose = inc.filter((x) => !isDistrict(x.zona));
+    const out = state.units.length - inc.length;
+    const row = (z, n) => {
       const st = stats.get(z);
-      const allSel = members.every((x) => selected.has(x.u));
-      return h('div', { class: 'zone' + (members.length > 1 ? ' merged' : '') },
-        h('div', { class: 'zone-head' },
-          h('input', { type: 'text', class: 'zone-name', value: z, 'aria-label': 'Nom de la zona', id: 'zona-' + zi,
-            onchange: (e) => renameZone(z, e.target.value), onkeydown: (e) => { if (e.key === 'Enter') e.target.blur(); } }),
-          h('div', { class: 'zone-tools' },
-            h('button', { type: 'button', class: 'icon', title: 'Puja', 'aria-label': 'Puja ' + z, disabled: zi === 0, onclick: () => moveZone(z, -1) }, '↑'),
-            h('button', { type: 'button', class: 'icon', title: 'Baixa', 'aria-label': 'Baixa ' + z, disabled: zi === zones.length - 1, onclick: () => moveZone(z, 1) }, '↓'),
-            members.length > 1 ? h('button', { type: 'button', class: 'link', onclick: () => {
-              // desfà el districte: cada agrupació torna a ser una zona amb el seu nom
-              const names = new Set(zoneList());
-              state.units.forEach((x) => {
-                if (!(x.inc && x.zona === z)) return;
-                let n = cap(db.units[x.u].desc); if (names.has(n)) n = db.units[x.u].name;
-                x.zona = n; names.add(n);
-              });
-              delete state.zonePop[z]; selected.clear(); renderZones(); schedule();
-            } }, 'Separa') : null)),
-        h('div', { class: 'zone-meta' },
-          h('span', {}, `${members.length} ${members.length === 1 ? 'agrupació' : 'agrupacions'}`),
-          st ? h('span', {}, `univers ${fmt(st.censUnivers)} · quota ${fmt(st.quota)}`) : null,
-          h('button', { type: 'button', class: 'link', onclick: () => { members.forEach((x) => (allSel ? selected.delete(x.u) : selected.add(x.u))); renderZones(); } }, allSel ? 'Desmarca' : 'Marca-les')),
-        state.useZonePop ? h('label', { class: 'field row zp' }, h('span', { class: 'f-hint' }, 'Població externa'),
-          h('input', { type: 'number', min: 0, value: state.zonePop[z] || '', 'aria-label': 'Població externa de ' + z,
-            oninput: (e) => { state.zonePop[z] = Number(e.target.value) || 0; schedule(); } })) : null,
-        h('div', { class: 'members' }, members.map(unitRow)));
+      return h('li', { class: 'zrow' + (isDistrict(z) ? ' dist' : '') },
+        h('span', { class: 'zr-name' }, z),
+        h('span', { class: 'zr-meta' }, n > 1 ? `${n} agrup.` : ''),
+        h('span', { class: 'zr-q', title: 'Quota' }, st ? fmt(st.quota) : ''),
+        state.useZonePop ? h('input', { type: 'number', min: 0, class: 'zr-pop', value: state.zonePop[z] || '', 'aria-label': 'Població externa de ' + z, placeholder: 'població',
+          oninput: (e) => { state.zonePop[z] = Number(e.target.value) || 0; schedule(); } }) : null);
+    };
+    box.replaceChildren(
+      h('div', { class: 'zsum' },
+        h('strong', {}, `${zoneList().length} ${zoneList().length === 1 ? 'zona' : 'zones'}`),
+        h('span', {}, ` · ${ds.length} ${ds.length === 1 ? 'districte' : 'districtes'}, ${loose.length} ${loose.length === 1 ? 'agrupació solta' : 'agrupacions soltes'}${out ? `, ${out} fora` : ''}`)),
+      h('button', { type: 'button', class: 'btn primary block', onclick: openDistricts }, 'Organitza els districtes'),
+      h('ul', { class: 'zlist' }, ds.map((d) => row(d, inc.filter((x) => x.zona === d).length)), loose.map((x) => row(x.zona, 1))),
+      state.useZonePop ? h('p', { class: 'f-hint' }, 'Població externa de cada zona (p. ex. padró per nuclis del client). Només se\'n fa servir el pes relatiu.') : '');
+  }
+
+  // ------------------------------------------------------------ editor de districtes (arrossegar i deixar anar)
+  let dragIds = null;
+  function dragUnit(x) {
+    const el = h('div', { class: 'du' + (selected.has(x.u) ? ' sel' : '') + (x.inc ? '' : ' off'), draggable: 'true', 'data-u': x.u },
+      h('input', { type: 'checkbox', checked: selected.has(x.u), 'aria-label': 'Selecciona ' + db.units[x.u].name,
+        onclick: (e) => e.stopPropagation(),
+        onchange: (e) => { if (e.target.checked) selected.add(x.u); else selected.delete(x.u); renderDistricts(); } }),
+      h('span', { class: 'du-name', title: db.units[x.u].name }, unitLabel(x.u)),
+      h('span', { class: 'du-u' }, unitUniv.has(x.u) ? fmt(unitUniv.get(x.u)) : ''));
+    el.addEventListener('dragstart', (e) => {
+      dragIds = selected.has(x.u) ? new Set(selected) : new Set([x.u]);
+      e.dataTransfer.effectAllowed = 'move';
+      try { e.dataTransfer.setData('text/plain', [...dragIds].join(',')); } catch (err) { /* res */ }
+      document.body.classList.add('dragging');
+      const n = dragIds.size;
+      if (n > 1) {
+        const ghost = h('div', { class: 'ghost' }, `${n} agrupacions`);
+        document.body.append(ghost);
+        e.dataTransfer.setDragImage(ghost, 10, 10);
+        setTimeout(() => ghost.remove(), 0);
+      }
     });
+    el.addEventListener('dragend', () => { dragIds = null; document.body.classList.remove('dragging'); document.querySelectorAll('.over').forEach((n) => n.classList.remove('over')); });
+    el.addEventListener('click', () => { if (selected.has(x.u)) selected.delete(x.u); else selected.add(x.u); renderDistricts(); });
+    return el;
+  }
+  function dropZone(el, onDrop) {
+    el.addEventListener('dragover', (e) => { if (!dragIds) return; e.preventDefault(); e.dataTransfer.dropEffect = 'move'; el.classList.add('over'); });
+    el.addEventListener('dragleave', (e) => { if (!el.contains(e.relatedTarget)) el.classList.remove('over'); });
+    el.addEventListener('drop', (e) => { e.preventDefault(); el.classList.remove('over'); if (dragIds) { const ids = dragIds; dragIds = null; document.body.classList.remove('dragging'); onDrop(ids); } });
+    return el;
+  }
 
+  function openDistricts() {
+    const dlg = $('#districts');
+    normalize();
+    selected.clear();
+    if (dlg.showModal) dlg.showModal(); else dlg.setAttribute('open', '');
+    renderDistricts();
+  }
+
+  function renderDistricts() {
+    const dlg = $('#districts');
+    if (!dlg || !dlg.open) return;
+    refreshUnitUniv();
+    const stats = new Map(result && result.diag ? result.diag.zoneStats.map((z) => [z.zona, z]) : []);
+    const q = ($('#d-search') && $('#d-search').value || '').trim().toLowerCase();
+    const inc = state.units.filter((x) => x.inc);
+    const loose = inc.filter((x) => !isDistrict(x.zona));
+    const shown = loose.filter((x) => !q || unitLabel(x.u).toLowerCase().includes(q) || db.units[x.u].name.toLowerCase().includes(q));
     const excluded = state.units.filter((x) => !x.inc);
-    const exBox = excluded.length ? h('div', { class: 'zone excluded' },
-      h('div', { class: 'zone-head' }, h('strong', {}, 'Fora de l\'estudi'), h('span', { class: 'f-hint' }, 'no compten a l\'univers')),
-      h('div', { class: 'members' }, excluded.map(unitRow))) : null;
+    const sumU = (xs) => xs.reduce((a, x) => a + (unitUniv.get(x.u) || 0), 0);
 
+    // columna esquerra: agrupacions soltes
+    const pool = dropZone(h('section', { class: 'pool' },
+      h('div', { class: 'pool-head' },
+        h('h3', {}, 'Agrupacions soltes'),
+        h('span', { class: 'f-hint' }, `${loose.length} · cada una és una zona`)),
+      h('div', { class: 'pool-tools' },
+        h('input', { type: 'search', id: 'd-search', value: q, placeholder: 'Cerca una agrupació…', 'aria-label': 'Cerca una agrupació',
+          oninput: () => { const pos = $('#d-search').selectionStart; renderDistricts(); const s = $('#d-search'); s.focus(); s.setSelectionRange(pos, pos); } }),
+        h('button', { type: 'button', class: 'link', onclick: () => { shown.forEach((x) => selected.add(x.u)); renderDistricts(); } }, 'Marca-les')),
+      h('div', { class: 'du-list' }, shown.length ? shown.map(dragUnit) : h('p', { class: 'f-hint' }, loose.length ? 'Cap agrupació coincideix amb la cerca.' : 'Totes les agrupacions són en districtes. Arrossega\'n una aquí per deixar-la solta.')),
+      dropZone(h('div', { class: 'outbox' },
+        h('div', { class: 'pool-head' }, h('h3', {}, 'Fora de l\'estudi'), h('span', { class: 'f-hint' }, excluded.length ? `${excluded.length}` : 'arrossega-hi les que no hi entren')),
+        h('div', { class: 'du-list' }, excluded.map(dragUnit))), exclude)), makeLoose);
+
+    // columna dreta: districtes
+    const ds = districts();
+    const cards = ds.map((d, i) => {
+      const members = state.units.filter((x) => x.inc && x.zona === d);
+      const st = stats.get(d);
+      const name = h('input', { type: 'text', class: 'dc-name', value: d, 'aria-label': 'Nom del districte',
+        onchange: (e) => renameDistrict(d, e.target.value), onkeydown: (e) => { if (e.key === 'Enter') e.target.blur(); } });
+      if (focusDistrict === d) setTimeout(() => { name.focus(); name.select(); focusDistrict = null; }, 0);
+      return dropZone(h('section', { class: 'dcard' + (members.length ? '' : ' empty') },
+        h('div', { class: 'dc-head' }, name,
+          h('div', { class: 'dc-tools' },
+            h('button', { type: 'button', class: 'icon', 'aria-label': 'Mou ' + d + ' amunt', title: 'Amunt', disabled: i === 0, onclick: () => moveDistrict(d, -1) }, '↑'),
+            h('button', { type: 'button', class: 'icon', 'aria-label': 'Mou ' + d + ' avall', title: 'Avall', disabled: i === ds.length - 1, onclick: () => moveDistrict(d, 1) }, '↓'),
+            h('button', { type: 'button', class: 'icon', 'aria-label': 'Desfés ' + d, title: 'Desfés el districte', onclick: () => deleteDistrict(d) }, '×'))),
+        h('div', { class: 'dc-meta' },
+          h('span', {}, `${members.length} ${members.length === 1 ? 'agrupació' : 'agrupacions'}`),
+          h('span', {}, `univers ${fmt(sumU(members))}`),
+          st ? h('span', { class: 'dc-q' }, `quota ${fmt(st.quota)}`) : null),
+        h('div', { class: 'du-list' }, members.length ? members.map(dragUnit) : h('p', { class: 'f-hint drop-hint' }, 'Arrossega-hi agrupacions'))),
+      (ids) => moveTo(ids, d));
+    });
+    const add = dropZone(h('button', { type: 'button', class: 'dcard new', onclick: () => newDistrict(selected.size ? new Set(selected) : null) },
+      h('span', { class: 'plus' }, '+'), h('strong', {}, 'Nou districte'),
+      h('span', { class: 'f-hint' }, selected.size ? `amb les ${selected.size} marcades` : 'o deixa-hi agrupacions')), newDistrict);
+
+    // barra d'accions per a la selecció (alternativa a arrossegar, també per a pantalles tàctils)
     const n = selected.size;
-    const target = h('select', { 'aria-label': 'Zona de destinació' },
-      h('option', { value: '' }, 'Mou a…'), zones.map((z) => h('option', { value: z }, z)));
-    target.onchange = () => { if (target.value) moveUnits(new Set(selected), target.value); };
-    const nameIn = h('input', { type: 'text', value: newZoneName(), 'aria-label': 'Nom del nou districte' });
-    const bar = h('div', { class: 'selbar' + (n ? ' on' : '') },
-      n ? [
-        h('strong', {}, `${n} ${n === 1 ? 'agrupació seleccionada' : 'agrupacions seleccionades'}`),
-        h('div', { class: 'selrow' }, nameIn,
-          h('button', { type: 'button', class: 'btn small primary', onclick: () => moveUnits(new Set(selected), nameIn.value.trim() || newZoneName()) }, n > 1 ? 'Agrupa en un districte' : 'Crea una zona nova')),
-        h('div', { class: 'selrow' }, target,
-          h('button', { type: 'button', class: 'btn small', onclick: () => excludeUnits(new Set(selected)) }, 'Treu de l\'estudi'),
-          h('button', { type: 'button', class: 'link', onclick: () => { selected.clear(); renderZones(); } }, 'Cancel·la')),
-      ] : h('span', { class: 'f-hint' }, 'Marca agrupacions per agrupar-les en un districte, moure-les a una altra zona o treure-les de l\'estudi.'));
+    const target = h('select', { 'aria-label': 'Mou les marcades a' }, h('option', { value: '' }, 'Mou a…'), ds.map((d) => h('option', { value: d }, d)));
+    target.onchange = () => { if (target.value) moveTo(new Set(selected), target.value); };
+    const bar = h('div', { class: 'dbar' + (n ? ' on' : '') }, n ? [
+      h('strong', {}, `${n} ${n === 1 ? 'marcada' : 'marcades'}`),
+      h('button', { type: 'button', class: 'btn small primary', onclick: () => newDistrict(new Set(selected)) }, 'Nou districte'),
+      ds.length ? target : null,
+      h('button', { type: 'button', class: 'btn small', onclick: () => makeLoose(new Set(selected)) }, 'Deixa-les soltes'),
+      h('button', { type: 'button', class: 'btn small', onclick: () => exclude(new Set(selected)) }, 'Treu de l\'estudi'),
+      h('button', { type: 'button', class: 'link', onclick: () => { selected.clear(); renderDistricts(); } }, 'Desmarca'),
+    ] : h('span', { class: 'f-hint' }, 'Arrossega les agrupacions a un districte o a «Nou districte». També pots marcar-ne diverses i moure-les juntes amb aquesta barra.'));
 
-    $('#units').replaceChildren(bar, h('div', { class: 'zones-list' }, cards, exBox || ''),
-      state.useZonePop ? h('p', { class: 'f-hint' }, 'Població externa: la de cada zona segons el client (p. ex. padró per nuclis). Només se\'n fa servir el pes relatiu.') : '');
+    $('#d-body').replaceChildren(pool, h('section', { class: 'dgrid' }, cards, add));
+    $('#d-bar').replaceChildren(bar);
+    $('#d-count').textContent = `${zoneList().length} zones resultants · ${ds.length} ${ds.length === 1 ? 'districte' : 'districtes'}`;
   }
 
   function addMuni() {
@@ -505,25 +639,30 @@
     if (!m) { $('#muni-msg').textContent = 'No trobo aquest municipi a la base de dades.'; return; }
     $('#muni-msg').textContent = '';
     const replace = $('#f-muni-mode').value === 'replace';
-    if (replace) { state.munis = [m.name]; state.units = []; state.zonePop = {}; } else if (state.munis.includes(m.name)) return;
+    if (replace) { state.munis = [m.name]; state.units = []; state.zonePop = {}; state.districts = []; } else if (state.munis.includes(m.name)) return;
     else state.munis.push(m.name);
     if (!replace && state.munis.length === 2) {
-      // en passar a un àmbit de diversos municipis, cada municipi és una zona per defecte
+      // en passar a un àmbit de diversos municipis, cada municipi és un districte per defecte
       state.units.forEach((x) => { x.zona = M.niceMuni(db.units[x.u].muni); });
+      state.districts = [M.niceMuni(state.munis[0])];
     }
     M.defaultZones(db, m.name).forEach((z) => state.units.push(Object.assign(z, { inc: true, name: db.units[z.u].name },
       state.munis.length > 1 ? { zona: m.label } : {})));
+    if (state.munis.length > 1) districts().push(m.label);
     inp.value = '';
+    normalize();
     renderUnits(); schedule();
   }
 
   function zonePreset(kind) {
-    if (kind === 'agrup') state.units.forEach((x) => { x.zona = state.munis.length > 1 ? db.units[x.u].name : M.defaultZones(db, db.units[x.u].muni).find((z) => z.u === x.u).zona; });
-    if (kind === 'muni') state.units.forEach((x) => { x.zona = M.niceMuni(db.units[x.u].muni); });
-    if (kind === 'one') state.units.forEach((x) => { x.zona = muniLabel(); });
+    const taken = new Set();
+    if (kind === 'agrup') { state.districts = []; state.units.forEach((x) => { x.zona = looseName(x.u, taken); taken.add(x.zona); }); }
+    if (kind === 'muni') { state.units.forEach((x) => { x.zona = M.niceMuni(db.units[x.u].muni); }); state.districts = [...new Set(state.units.map((x) => x.zona))]; }
+    if (kind === 'one') { state.units.forEach((x) => { x.zona = muniLabel(); }); state.districts = [muniLabel()]; }
     state.zonePop = {};
     selected.clear();
-    renderUnits(); schedule();
+    normalize();
+    renderUnits(); renderDistricts(); schedule();
   }
 
   function varSelects(t, onChange) {
@@ -655,6 +794,8 @@
     $('#z-agrup').addEventListener('click', () => zonePreset('agrup'));
     $('#z-muni').addEventListener('click', () => zonePreset('muni'));
     $('#z-one').addEventListener('click', () => zonePreset('one'));
+    $('#d-close').addEventListener('click', () => $('#districts').close());
+    $('#districts').addEventListener('close', () => { selected.clear(); renderZones(); });
     $('#add-extra').addEventListener('click', () => { state.extras.push({ rows: 'cap', cols: ['sexe'], mode: 'derivada' }); renderDesign(); schedule(); });
     document.querySelectorAll('[data-preset]').forEach((b) => b.addEventListener('click', () => applyPreset(b.dataset.preset)));
     $('#export').addEventListener('click', exportXlsx);
