@@ -248,21 +248,38 @@
       kpi('Error mostral', '±' + M.pct1(d.moe), r.isShare ? '95%, p=q=50%, població infinita' : '95%, p=q=50%'),
       kpi(`Cel·les ≤ ${thr}`, `${d.small} de ${d.cells}`, M.pct(d.smallPct) + ' de la taula principal', d.smallPct > 0.2 ? 'bad' : d.smallPct > 0.1 ? 'warn' : 'ok'),
     );
-    const alerts = h('div', { class: 'alerts' },
-      r.errors.map((e) => h('div', { class: 'alert bad' }, e)),
-      r.warnings.map((e) => h('div', { class: 'alert warn' }, e)),
-      r.notes.map((e) => h('div', { class: 'alert note' }, e)),
-    );
+    // avisos i notes plegats en una sola línia; els errors obren el plec sols
+    const nW = r.warnings.length, nN = r.notes.length, nE = r.errors.length;
+    const item = (cls, e) => h('li', { class: cls }, e);
+    const alerts = (nE + nW + nN) ? fold('review', 'review', nE > 0,
+      [h('span', { class: 'rv-title' }, 'Revisió del disseny'),
+        nE ? h('span', { class: 'rv-chip bad' }, `${nE} ${nE === 1 ? 'error' : 'errors'}`) : null,
+        nW ? h('span', { class: 'rv-chip warn' }, `${nW} ${nW === 1 ? 'avís' : 'avisos'}`) : null,
+        nN ? h('span', { class: 'rv-chip note' }, `${nN} ${nN === 1 ? 'nota' : 'notes'}`) : null],
+      h('ul', { class: 'rv-list' }, r.errors.map((e) => item('bad', e)), r.warnings.map((e) => item('warn', e)), r.notes.map((e) => item('note', e))))
+      : h('p', { class: 'rv-ok' }, 'Revisió del disseny: cap avís.');
     const dist = h('p', { class: 'dist' }, 'Distribució de quotes a la taula principal: ',
-      d.dist.map((n, k) => h('span', { class: 'chip' + (k <= thr ? ' small' : '') }, `${k}: ${n}`)),
+      d.dist.map((n, k) => h('span', { class: 'chip' + (k <= thr && n > 0 ? ' small' : '') }, `${k}: ${n}`)),
       h('span', { class: 'chip' }, `5+: ${d.cells - d.dist.reduce((a, b) => a + b, 0)}`));
     const zoneTbl = d.zoneStats.length ? h('div', { class: 'scroll' }, h('table', { class: 'q zones' },
       h('thead', {}, h('tr', {}, ['Zona', 'Univers (cens)', r.ipfApplied ? 'Univers ajustat' : null, 'Quota', 'Error ±'].filter(Boolean).map((x) => h('th', {}, x)))),
       h('tbody', {}, d.zoneStats.map((z) => h('tr', {}, h('th', {}, z.zona), h('td', {}, fmt(z.censUnivers)), r.ipfApplied ? h('td', {}, fmt(z.univers)) : null,
         h('td', { class: z.quota < 50 ? 'lowz' : '' }, fmt(z.quota)), h('td', {}, M.pct1(z.moe))))))) : null;
+    const legend = h('p', { class: 'legend' }, h('span', {}, h('span', { class: 'sw' }), `quota de ${thr} o menys`),
+      h('span', {}, 'Passa el ratolí per una cel·la per veure\'n l\'univers i l\'ajust.'));
     out.replaceChildren(kpis, alerts,
-      db.has.zona ? h('section', { class: 'res-block' }, h('h3', {}, 'Mida per zona'), zoneTbl || h('p', { class: 'muted' }, 'La taula principal no té zones.')) : '',
-      h('section', { class: 'res-block' }, h('h3', {}, 'Quotes'), dist, r.tables.map((t) => tableView(t, t === r.main ? thr : null))));
+      h('section', { class: 'res-block' }, h('h3', {}, 'Quotes'), h('div', { class: 'q-meta' }, dist, legend), r.tables.map((t) => tableView(t, t === r.main ? thr : null))),
+      db.has.zona && zoneTbl ? fold('zones', 'res-block fold', false,
+        [h('span', { class: 'rv-title' }, 'Mida i error per zona'), h('span', { class: 'f-hint' }, `${d.zoneStats.length} zones · ${d.zoneStats.filter((z) => z.quota < 50).length} amb menys de 50 entrevistes`)], zoneTbl) : '');
+  }
+
+  /** Bloc plegable que recorda (en aquest navegador) si l'usuari el té obert. */
+  function fold(key, cls, force, summary, body) {
+    let open = force;
+    try { if (!force) open = localStorage.getItem('mostres.fold.' + key) === '1'; } catch (e) { /* sense emmagatzematge */ }
+    const el = h('details', { class: cls, open }, h('summary', {}, summary, h('span', { class: 'rv-toggle' }, '')), body);
+    el.addEventListener('toggle', () => { try { localStorage.setItem('mostres.fold.' + key, el.open ? '1' : '0'); } catch (e) { /* res */ } });
+    return el;
   }
 
   function kpi(label, value, sub, tone) {

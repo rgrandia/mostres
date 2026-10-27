@@ -88,6 +88,8 @@ input[type=checkbox] { accent-color: var(--blau); }
 #db-info { font-size: 12.5px; color: var(--gris-fosc); }
 #db-info strong { color: var(--ink); font-weight: 500; }
 #db-status, #muni-msg { font-size: 12.5px; color: var(--blau-fosc); font-weight: 500; }
+.more > summary { cursor: pointer; font-size: 12.5px; font-weight: 500; color: var(--blau); }
+.more-body { display: flex; flex-direction: column; gap: 10px; padding-top: 10px; }
 .idescat { font-size: 12.5px; font-weight: 500; color: var(--blau); }
 .file { position: relative; overflow: hidden; display: inline-block; }
 .file input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
@@ -155,8 +157,31 @@ table.q td.lowz { background: var(--groc-25); font-weight: 700; }
 table.q tr.total th, table.q tr.total td { background: var(--gris-1); font-weight: 700; color: var(--negre); }
 table.zones td { min-width: 90px; }
 .empty p { margin: 0; max-width: 65ch; }
-.legend { font-size: 12px; color: var(--gris-fosc); display: flex; flex-wrap: wrap; gap: 14px; }
-.sw { display: inline-block; width: 12px; height: 12px; vertical-align: -2px; margin-right: 5px; }
+.legend { margin: 0; font-size: 12px; color: var(--gris-fosc); display: flex; flex-wrap: wrap; gap: 14px; }
+.q-meta { display: flex; flex-wrap: wrap; gap: 6px 24px; align-items: center; justify-content: space-between; }
+/* revisió plegable */
+details.review, details.fold { background: var(--blanc); border: 1px solid var(--line); }
+details.review > summary, details.fold > summary { list-style: none; cursor: pointer; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 14px; }
+details > summary::-webkit-details-marker { display: none; }
+details > summary:hover { background: var(--sunk); }
+.rv-title { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--blau); margin-right: 4px; }
+.rv-chip { font-size: 11.5px; font-weight: 700; padding: 1px 8px; }
+.rv-chip.bad { background: var(--negre); color: var(--blanc); }
+.rv-chip.warn { background: var(--groc); color: var(--negre); }
+.rv-chip.note { background: var(--blau-fons); color: var(--blau-fosc); }
+.rv-toggle { margin-left: auto; font-size: 12px; font-weight: 500; color: var(--blau); }
+.rv-toggle::after { content: "Mostra ▾"; }
+details[open] > summary .rv-toggle::after { content: "Amaga ▴"; }
+.rv-list { list-style: none; margin: 0; padding: 4px 14px 12px; display: flex; flex-direction: column; gap: 6px; border-top: 1px solid var(--line); }
+.rv-list li { position: relative; padding: 6px 0 0 18px; font-size: 12.5px; color: var(--ink); max-width: 110ch; line-height: 1.45; }
+.rv-list li::before { content: ""; position: absolute; left: 0; top: 11px; width: 9px; height: 9px; }
+.rv-list li.bad::before { background: var(--negre); }
+.rv-list li.warn::before { background: var(--groc); }
+.rv-list li.note::before { background: var(--blau-50); }
+.rv-ok { margin: 0; font-size: 12.5px; color: var(--gris-fosc); }
+details.fold { padding: 0; }
+details.fold > .scroll { padding: 10px 14px 14px; border-top: 1px solid var(--line); }
+.sw { display: inline-block; width: 12px; height: 12px; vertical-align: -2px; margin-right: 5px; background: var(--groc); }
 
 /* editor de districtes */
 dialog#districts { width: min(1240px, calc(100vw - 32px)); max-width: none; height: min(860px, calc(100vh - 32px)); padding: 0; border: 0; color: var(--text);
@@ -232,7 +257,7 @@ body.dragging .dcard, body.dragging .pool, body.dragging .outbox { outline: 1px 
         <button id="db-reset" class="link" type="button" hidden>Torna a la base inclosa</button>
       </div>
       <a class="idescat" href="https://www.idescat.cat/dades/obertes/censph" target="_blank" rel="noopener">Descarrega taules del cens a Idescat (dades obertes) ↗</a>
-      <span class="f-hint">CSV, ZIP o XLSX en format llarg (una fila per combinació i una columna de valor), com els d'Idescat. Les variables que el fitxer no tingui (zona, edat, origen, sexe) no s'ofereixen. Es queda desada en aquest navegador.</span>
+      <span class="f-hint" title="Una fila per combinació i una columna de valor. Les variables que el fitxer no tingui (zona, edat, origen, sexe) no s'ofereixen. La base carregada es queda desada en aquest navegador.">CSV, ZIP o XLSX en format llarg, com els d'Idescat.</span>
       <span id="db-status" role="status"></span>
     </section>
 
@@ -242,10 +267,14 @@ body.dragging .dcard, body.dragging .pool, body.dragging .outbox { outline: 1px 
         <label class="field"><span class="f-label">Núm. d'estudi</span><input id="f-estudi" type="text" placeholder="XXXX"></label>
         <label class="field"><span class="f-label">Any de l'estudi</span><input id="f-anyestudi" type="text" inputmode="numeric"></label>
       </div>
-      <label class="field"><span class="f-label">Títol de la taula principal</span><input id="f-titol" type="text"></label>
-      <label class="field"><span class="f-label">Descripció de l'univers</span><input id="f-univers" type="text"></label>
-      <label class="field"><span class="f-label">Font</span><input id="f-font" type="text"></label>
-      <span class="f-hint">Si deixes els textos buits, es fan servir els proposats (en gris).</span>
+      <details class="more"><summary>Textos de l'Excel (opcional)</summary>
+        <div class="more-body">
+          <label class="field"><span class="f-label">Títol de la taula principal</span><input id="f-titol" type="text"></label>
+          <label class="field"><span class="f-label">Descripció de l'univers</span><input id="f-univers" type="text"></label>
+          <label class="field"><span class="f-label">Font</span><input id="f-font" type="text"></label>
+          <span class="f-hint">Buits, es fan servir els proposats (en gris).</span>
+        </div>
+      </details>
     </section>
 
     <section class="step">
@@ -305,7 +334,6 @@ body.dragging .dcard, body.dragging .pool, body.dragging .outbox { outline: 1px 
 
   <main class="main">
     <div id="results"><p class="muted">Carregant la base de dades del cens…</p></div>
-    <p class="legend"><span><span class="sw" style="background:var(--groc)"></span>quota per sota del llindar</span><span>A l'Excel, les cel·les grogues són les editables (N, ajustos, CAWI).</span><span>Passa el ratolí per una cel·la per veure'n l'univers i l'ajust.</span></p>
   </main>
 </div>
 
