@@ -89,6 +89,10 @@ input[type=checkbox] { accent-color: var(--blau); }
 #db-info strong { color: var(--ink); font-weight: 500; }
 #db-status, #muni-msg { font-size: 12.5px; color: var(--blau-fosc); font-weight: 500; }
 .more > summary { cursor: pointer; font-size: 12.5px; font-weight: 500; color: var(--blau); }
+#design-summary { color: var(--ink); font-weight: 400; line-height: 1.45; }
+#design-summary b { color: var(--blau); font-weight: 700; }
+#design-summary .edit { color: var(--blau); font-weight: 500; text-decoration: underline; margin-left: 6px; }
+#design-fold[open] #design-summary .edit { display: none; }
 .more-body { display: flex; flex-direction: column; gap: 10px; padding-top: 10px; }
 .idescat { font-size: 12.5px; font-weight: 500; color: var(--blau); }
 .file { position: relative; overflow: hidden; display: inline-block; }
@@ -308,14 +312,18 @@ body.dragging .dcard, body.dragging .pool, body.dragging .outbox { outline: 1px 
 
     <section class="step">
       <h2><span class="n">5</span>Taules i creuaments</h2>
-      <div class="row-actions"><span class="f-hint">Models:</span>
-        <button class="btn small" type="button" data-preset="plantilla" data-needs="zona edat sexe">Zona × sexe × edat</button>
-        <button class="btn small" type="button" data-preset="complet" data-needs="origen">Creuament complet amb origen</button>
-        <button class="btn small" type="button" data-preset="marginal" data-needs="zona origen">Origen marginal</button>
-        <button class="btn small" type="button" data-preset="municipi" data-needs="zona">Sense zones</button></div>
-      <div class="extra"><div class="extra-head"><strong>Taula principal</strong><span class="f-hint">la que va a camp</span></div><div id="main-design"></div></div>
-      <div id="extras" style="display:flex;flex-direction:column;gap:8px"></div>
-      <div><button id="add-extra" class="btn small" type="button">Afegeix una taula</button></div>
+      <details class="more" id="design-fold"><summary id="design-summary">Canvia el creuament</summary>
+        <div class="more-body">
+          <div class="row-actions"><span class="f-hint">Models:</span>
+            <button class="btn small" type="button" data-preset="plantilla" data-needs="zona edat sexe">Zona × sexe × edat</button>
+            <button class="btn small" type="button" data-preset="complet" data-needs="origen">Creuament complet amb origen</button>
+            <button class="btn small" type="button" data-preset="marginal" data-needs="zona origen">Origen marginal</button>
+            <button class="btn small" type="button" data-preset="municipi" data-needs="zona">Sense zones</button></div>
+          <div class="extra"><div class="extra-head"><strong>Taula principal</strong><span class="f-hint">la que va a camp</span></div><div id="main-design"></div></div>
+          <div id="extras" style="display:flex;flex-direction:column;gap:8px"></div>
+          <div><button id="add-extra" class="btn small" type="button">Afegeix una taula</button></div>
+        </div>
+      </details>
     </section>
 
     <section class="step">

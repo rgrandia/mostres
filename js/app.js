@@ -708,8 +708,19 @@
     return sel;
   }
 
+  /** Resum d'una línia del disseny de taules, visible amb el pas 5 plegat. */
+  function designSummary() {
+    const name = (t) => (t.rows === 'zona' && db.has.zona ? ['Zona'] : []).concat((t.cols || []).map((v) => M.VAR_NAMES[v])).join(' × ') || 'Total';
+    const el = $('#design-summary');
+    const n = state.extras.length;
+    el.replaceChildren('Principal: ', h('b', {}, name(state.main)),
+      n ? ` · ${n} ${n === 1 ? 'taula més' : 'taules més'} (${state.extras.map(name).join('; ')})` : '',
+      h('span', { class: 'edit' }, 'Canvia'));
+  }
+
   function renderDesign() {
     const re = () => { renderDesign(); schedule(); };
+    designSummary();
     const m = state.main;
     $('#main-design').replaceChildren(
       h('div', { class: 'design-row' }, h('span', { class: 'f-label' }, 'Files'), rowsSelect(m, re)),
@@ -812,6 +823,9 @@
     $('#z-muni').addEventListener('click', () => zonePreset('muni'));
     $('#z-one').addEventListener('click', () => zonePreset('one'));
     $('#d-close').addEventListener('click', () => $('#districts').close());
+    const df = $('#design-fold');
+    try { df.open = localStorage.getItem('mostres.fold.design') === '1'; } catch (e) { /* sense emmagatzematge */ }
+    df.addEventListener('toggle', () => { try { localStorage.setItem('mostres.fold.design', df.open ? '1' : '0'); } catch (e) { /* res */ } });
     $('#districts').addEventListener('close', () => { selected.clear(); renderZones(); });
     $('#add-extra').addEventListener('click', () => { state.extras.push({ rows: 'cap', cols: ['sexe'], mode: 'derivada' }); renderDesign(); schedule(); });
     document.querySelectorAll('[data-preset]').forEach((b) => b.addEventListener('click', () => applyPreset(b.dataset.preset)));
