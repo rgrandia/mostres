@@ -68,10 +68,21 @@ input.n-cell { border: 2px solid var(--blau); font-weight: 700; font-size: 17px;
   padding-block: 22px 60px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
 @media (max-width: 900px) { .wrap { grid-template-columns: minmax(0, 1fr); } .top { position: static; } }
 .side { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
-.step { background: var(--blanc); border: 1px solid var(--line); padding: 0 16px 16px; display: flex; flex-direction: column; gap: 10px; }
-.step h2 { font-size: 12.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; display: flex; gap: 10px; align-items: center;
-  margin: 0 -16px 4px; padding: 10px 16px; background: var(--blau-fons); color: var(--blau); }
-.step h2 .n { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--blau); color: var(--blanc); font-size: 11.5px; font-weight: 700; }
+.side { gap: 10px; }
+details.step { background: var(--blanc); border: 1px solid var(--line); }
+details.step > summary { list-style: none; cursor: pointer; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 10px; align-items: center;
+  padding: 10px 16px; background: var(--blau-fons); }
+details.step > summary::-webkit-details-marker { display: none; }
+details.step > summary::after { content: "▾"; grid-column: 2; grid-row: 1 / span 2; color: var(--blau); font-size: 13px; transition: transform .15s; }
+details.step[open] > summary::after { transform: rotate(180deg); }
+details.step > summary:hover { background: var(--blau-25); }
+details.step h2 { font-size: 12.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; display: flex; gap: 10px; align-items: center; color: var(--blau); }
+details.step h2 .n { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--blau); color: var(--blanc); font-size: 11.5px; font-weight: 700; flex: none; }
+.st-sum { grid-column: 1; font-size: 12px; color: var(--ink); padding-left: 32px; overflow-wrap: anywhere; }
+.st-sum:empty { display: none; }
+.st-sum b { color: var(--blau); font-weight: 700; }
+details.step[open] > summary .st-sum { display: none; }
+.st-body { padding: 14px 16px 16px; display: flex; flex-direction: column; gap: 10px; }
 .field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .field.row { flex-direction: row; align-items: center; justify-content: space-between; gap: 10px; }
 .field.row input { width: 110px; }
@@ -89,10 +100,6 @@ input[type=checkbox] { accent-color: var(--blau); }
 #db-info strong { color: var(--ink); font-weight: 500; }
 #db-status, #muni-msg { font-size: 12.5px; color: var(--blau-fosc); font-weight: 500; }
 .more > summary { cursor: pointer; font-size: 12.5px; font-weight: 500; color: var(--blau); }
-#design-summary { color: var(--ink); font-weight: 400; line-height: 1.45; }
-#design-summary b { color: var(--blau); font-weight: 700; }
-#design-summary .edit { color: var(--blau); font-weight: 500; text-decoration: underline; margin-left: 6px; }
-#design-fold[open] #design-summary .edit { display: none; }
 .more-body { display: flex; flex-direction: column; gap: 10px; padding-top: 10px; }
 .idescat { font-size: 12.5px; font-weight: 500; color: var(--blau); }
 .file { position: relative; overflow: hidden; display: inline-block; }
@@ -253,8 +260,9 @@ body.dragging .dcard, body.dragging .pool, body.dragging .outbox { outline: 1px 
 
 <div class="wrap">
   <aside class="side">
-    <section class="step">
-      <h2><span class="n">1</span>Base de dades</h2>
+    <details class="step" id="st-1">
+      <summary><h2><span class="n">1</span>Base de dades</h2><span class="st-sum" id="sum-1"></span></summary>
+      <div class="st-body">
       <div id="db-info"></div>
       <div class="row-actions">
         <span class="file btn small">Carrega una base nova…<input id="f-file" type="file" accept=".csv,.zip,.xlsx,.txt" aria-label="Carrega una base de dades"></span>
@@ -263,10 +271,12 @@ body.dragging .dcard, body.dragging .pool, body.dragging .outbox { outline: 1px 
       <a class="idescat" href="https://www.idescat.cat/dades/obertes/censph" target="_blank" rel="noopener">Descarrega taules del cens a Idescat (dades obertes) ↗</a>
       <span class="f-hint" title="Una fila per combinació i una columna de valor. Les variables que el fitxer no tingui (zona, edat, origen, sexe) no s'ofereixen. La base carregada es queda desada en aquest navegador.">CSV, ZIP o XLSX en format llarg, com els d'Idescat.</span>
       <span id="db-status" role="status"></span>
-    </section>
+      </div>
+    </details>
 
-    <section class="step">
-      <h2><span class="n">2</span>Estudi</h2>
+    <details class="step" id="st-2">
+      <summary><h2><span class="n">2</span>Estudi</h2><span class="st-sum" id="sum-2"></span></summary>
+      <div class="st-body">
       <div class="grid2">
         <label class="field"><span class="f-label">Núm. d'estudi</span><input id="f-estudi" type="text" placeholder="XXXX"></label>
         <label class="field"><span class="f-label">Any de l'estudi</span><input id="f-anyestudi" type="text" inputmode="numeric"></label>
@@ -279,10 +289,12 @@ body.dragging .dcard, body.dragging .pool, body.dragging .outbox { outline: 1px 
           <span class="f-hint">Buits, es fan servir els proposats (en gris).</span>
         </div>
       </details>
-    </section>
+      </div>
+    </details>
 
-    <section class="step">
-      <h2><span class="n">3</span>Àmbit i zones</h2>
+    <details class="step" id="st-3">
+      <summary><h2><span class="n">3</span>Àmbit i zones</h2><span class="st-sum" id="sum-3"></span></summary>
+      <div class="st-body">
       <div class="grid2">
         <label class="field" id="w-year"><span class="f-label">Any</span><select id="f-year"></select></label>
         <label class="field" data-needs="zona"><span class="f-label">En afegir</span><select id="f-muni-mode"><option value="replace">Substitueix</option><option value="add">Suma a l'àmbit</option></select></label>
@@ -297,10 +309,12 @@ body.dragging .dcard, body.dragging .pool, body.dragging .outbox { outline: 1px 
       <div id="units"></div>
       <label class="check"><input id="f-usezp" type="checkbox">Ajusta el pes de les zones amb una població externa</label>
       </div>
-    </section>
+      </div>
+    </details>
 
-    <section class="step">
-      <h2><span class="n">4</span>Univers</h2>
+    <details class="step" id="st-4">
+      <summary><h2><span class="n">4</span>Univers</h2><span class="st-sum" id="sum-4"></span></summary>
+      <div class="st-body">
       <div class="grid2" data-needs="edat">
         <label class="field"><span class="f-label">Edat mínima</span><input id="f-minage" type="number" min="0"></label>
         <label class="field"><span class="f-label">Edat màxima</span><input id="f-maxage" type="number" min="0" placeholder="sense límit"></label>
@@ -308,12 +322,12 @@ body.dragging .dcard, body.dragging .pool, body.dragging .outbox { outline: 1px 
       <label class="field" data-needs="edat"><span class="f-label">Franges d'edat (inici de cada franja)</span><input id="f-bands" type="text"><span class="f-hint">Els talls han de coincidir amb les franges quinquennals del cens (20, 25, 30…).</span></label>
       <div class="field" data-needs="origen"><span class="f-label" id="origins-label">Origen inclòs a l'univers</span><div id="f-origins" class="origins"></div></div>
       <p id="univ-missing" class="f-hint" hidden></p>
-    </section>
+      </div>
+    </details>
 
-    <section class="step">
-      <h2><span class="n">5</span>Taules i creuaments</h2>
-      <details class="more" id="design-fold"><summary id="design-summary">Canvia el creuament</summary>
-        <div class="more-body">
+    <details class="step" id="st-5">
+      <summary><h2><span class="n">5</span>Taules i creuaments</h2><span class="st-sum" id="sum-5"></span></summary>
+      <div class="st-body">
           <div class="row-actions"><span class="f-hint">Models:</span>
             <button class="btn small" type="button" data-preset="plantilla" data-needs="zona edat sexe">Zona × sexe × edat</button>
             <button class="btn small" type="button" data-preset="complet" data-needs="origen">Creuament complet amb origen</button>
@@ -322,12 +336,12 @@ body.dragging .dcard, body.dragging .pool, body.dragging .outbox { outline: 1px 
           <div class="extra"><div class="extra-head"><strong>Taula principal</strong><span class="f-hint">la que va a camp</span></div><div id="main-design"></div></div>
           <div id="extras" style="display:flex;flex-direction:column;gap:8px"></div>
           <div><button id="add-extra" class="btn small" type="button">Afegeix una taula</button></div>
-        </div>
-      </details>
-    </section>
+      </div>
+    </details>
 
-    <section class="step">
-      <h2><span class="n">6</span>Mostra</h2>
+    <details class="step" id="st-6">
+      <summary><h2><span class="n">6</span>Mostra</h2><span class="st-sum" id="sum-6"></span></summary>
+      <div class="st-body">
       <div class="grid2">
         <label class="field"><span class="f-label">Mida (N)</span><input id="f-n" class="n-cell" type="number" min="1"></label>
         <label class="field"><span class="f-label">Avís si quota ≤</span><input id="f-threshold" type="number" min="0"></label>
@@ -337,7 +351,8 @@ body.dragging .dcard, body.dragging .pool, body.dragging .outbox { outline: 1px 
         <option value="directe">ROUND directe a cada cel·la (pot no quadrar)</option></select></label>
       <label class="field"><span class="f-label">% de la mostra en CAWI</span><input id="f-cawi" type="number" min="0" max="100"><span class="f-hint">0 = tot CATI. Si hi poses un percentatge, l'Excel afegeix els blocs CAWI i CATI.</span></label>
       <div><button id="reset-cfg" class="link" type="button">Restableix el disseny</button></div>
-    </section>
+      </div>
+    </details>
   </aside>
 
   <main class="main">

@@ -201,6 +201,7 @@
   function schedule() { clearTimeout(timer); timer = setTimeout(() => { save(); recompute(); }, 120); }
 
   function recompute() {
+    stepSummaries();
     const out = $('#results');
     if (!state.units.some((x) => x.inc)) {
       result = null;
@@ -708,19 +709,41 @@
     return sel;
   }
 
-  /** Resum d'una línia del disseny de taules, visible amb el pas 5 plegat. */
-  function designSummary() {
+  /** Resum d'una línia de cada pas, visible quan el pas és plegat. */
+  function stepSummaries() {
+    const set = (n, ...kids) => { const el = $('#sum-' + n); if (el) el.replaceChildren(...kids); };
     const name = (t) => (t.rows === 'zona' && db.has.zona ? ['Zona'] : []).concat((t.cols || []).map((v) => M.VAR_NAMES[v])).join(' × ') || 'Total';
-    const el = $('#design-summary');
+    set(1, h('b', {}, db.source.file || 'Base'), db.has.any ? ` · ${db.years[0]}–${db.years[db.years.length - 1]}` : '', db.isShare ? ' · %' : '');
+    set(2, state.estudi ? h('b', {}, 'Estudi ' + state.estudi) : 'Sense número d\'estudi', ` · ${state.anyEstudi}`);
+    const nz = zoneList().length, nd = districts().filter((d) => zoneList().includes(d)).length;
+    set(3, !db.has.zona ? h('b', {}, muniLabel()) : state.munis.length ? h('b', {}, state.munis.map(M.niceMuni).join(', ')) : 'Tria un municipi',
+      db.has.zona && state.munis.length ? ` · ${nz} ${nz === 1 ? 'zona' : 'zones'}${nd ? `, ${nd} ${nd === 1 ? 'districte' : 'districtes'}` : ''}` : '',
+      db.has.any ? ` · ${state.year}` : '');
+    const ages = db.has.edat ? `${state.minAge}${state.maxAge !== '' ? '-' + state.maxAge : '+'} anys (${String(state.bands).split(/[,;\s]+/).filter(Boolean).length} franges)` : 'Totes les edats';
+    set(4, h('b', {}, ages), db.has.origen ? ' · ' + state.origins.map((i) => cap(db.originLabels[i])).join(', ') : '');
     const n = state.extras.length;
-    el.replaceChildren('Principal: ', h('b', {}, name(state.main)),
-      n ? ` · ${n} ${n === 1 ? 'taula més' : 'taules més'} (${state.extras.map(name).join('; ')})` : '',
-      h('span', { class: 'edit' }, 'Canvia'));
+    set(5, h('b', {}, name(state.main)), n ? ` · ${n} ${n === 1 ? 'taula més' : 'taules més'}` : '');
+    set(6, h('b', {}, 'N = ' + state.N), state.rounding === 'directe' ? ' · ROUND directe' : ' · restes majors',
+      Number(state.cawiPct) > 0 ? ` · ${state.cawiPct}% CAWI` : ' · tot CATI');
+  }
+
+  /** Els passos són desplegables; el navegador recorda quins són oberts. */
+  function initSteps() {
+    let open = null;
+    try { open = JSON.parse(localStorage.getItem('mostres.steps') || 'null'); } catch (e) { /* res */ }
+    if (!Array.isArray(open)) open = [3];
+    document.querySelectorAll('details.step').forEach((d) => {
+      const n = Number(d.id.slice(3));
+      d.open = open.includes(n);
+      d.addEventListener('toggle', () => {
+        const now = [...document.querySelectorAll('details.step')].filter((x) => x.open).map((x) => Number(x.id.slice(3)));
+        try { localStorage.setItem('mostres.steps', JSON.stringify(now)); } catch (e) { /* res */ }
+      });
+    });
   }
 
   function renderDesign() {
     const re = () => { renderDesign(); schedule(); };
-    designSummary();
     const m = state.main;
     $('#main-design').replaceChildren(
       h('div', { class: 'design-row' }, h('span', { class: 'f-label' }, 'Files'), rowsSelect(m, re)),
@@ -823,9 +846,7 @@
     $('#z-muni').addEventListener('click', () => zonePreset('muni'));
     $('#z-one').addEventListener('click', () => zonePreset('one'));
     $('#d-close').addEventListener('click', () => $('#districts').close());
-    const df = $('#design-fold');
-    try { df.open = localStorage.getItem('mostres.fold.design') === '1'; } catch (e) { /* sense emmagatzematge */ }
-    df.addEventListener('toggle', () => { try { localStorage.setItem('mostres.fold.design', df.open ? '1' : '0'); } catch (e) { /* res */ } });
+    initSteps();
     $('#districts').addEventListener('close', () => { selected.clear(); renderZones(); });
     $('#add-extra').addEventListener('click', () => { state.extras.push({ rows: 'cap', cols: ['sexe'], mode: 'derivada' }); renderDesign(); schedule(); });
     document.querySelectorAll('[data-preset]').forEach((b) => b.addEventListener('click', () => applyPreset(b.dataset.preset)));
