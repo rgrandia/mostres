@@ -281,6 +281,7 @@
       ['Estudi', meta.estudi], ['Municipi / àmbit', meta.municipi], ['Any del cens', res.year],
       ['Fitxer de dades', meta.fitxer], ['Univers', meta.univers], ['Edat', res.has.edat ? `${res.minAge}${Number.isFinite(res.maxAge) ? '-' + res.maxAge : ' i més'} anys` : 'La base no té edat (totes les edats)'],
       ['Franges d\'edat', res.bandLabels.join(', ')], ['Origen inclòs', res.cats.origen.join(', ')],
+      ...(db.extra || []).map((e) => [e.label, e.labels.join(', ')]),
       ['Taula principal', main.title], ['Arrodoniment', cfg.rounding === 'directe' ? 'ROUND directe cel·la a cel·la' : 'Restes majors (primer per zona, després dins de cada zona)'],
       ['Pes de zones', res.ipfApplied ? 'Ajustat a població externa (IPF)' : 'Proporcional al cens'],
       ['Configuració (JSON)', JSON.stringify(cfg)],
@@ -309,10 +310,10 @@
 
     // ---------------- traçabilitat: files del cens utilitzades
     const fs = wb.addWorksheet(('Font - cens ' + res.year).slice(0, 31), { properties: { tabColor: { argb: 'FFBFBFBF' } } });
-    fs.addRow(['any', 'unitat', 'edat', db.originVar || 'origen', 'sexe', 'valor', 'estat']);
+    fs.addRow(['any', 'unitat', 'edat', db.originVar || 'origen', 'sexe', ...(db.extra || []).map((e) => e.label), 'valor', 'estat']);
     fs.getRow(1).font = font(true);
     M.sourceRows(db, cfg).forEach((row) => fs.addRow(row));
-    [8, 60, 18, 14, 10, 10, 8].forEach((w, i) => { fs.getColumn(i + 1).width = w; });
+    [8, 60, 18, 14, 10, ...(db.extra || []).map(() => 22), 10, 8].forEach((w, i) => { fs.getColumn(i + 1).width = w; });
     return wb;
   }
 

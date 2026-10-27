@@ -32,7 +32,10 @@ alternatives del sistema si no carreguen).
    qualsevol altra taula en format llarg (CSV, ZIP o XLSX), que queda desada al
    navegador. Només calen una columna de valor i alguna variable: l'aplicatiu
    detecta quines n'hi ha (any, zona, edat, origen/nacionalitat/lloc de
-   naixement o concepte, sexe) i amaga les opcions de les que falten. Si la
+   naixement o concepte, sexe) i amaga les opcions de les que falten. Qualsevol
+   altra columna amb categories (p. ex. «nivell d'estudis») es pot creuar a les
+   taules amb el nom de la columna; no s'ofereixen les que semblen codis, les que
+   només descriuen la zona ni les de més de 40 categories. Si la
    taula dona percentatges en lloc de persones (p. ex. `censph16401cat`), les
    quotes reprodueixen les proporcions i l'aplicatiu avisa de les limitacions
    (sense univers en persones, sexes amb el mateix pes, categories que no sumen

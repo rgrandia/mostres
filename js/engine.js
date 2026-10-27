@@ -123,31 +123,38 @@
     }
     if (col.valor == null) throw new Error(`No trobo la columna de valors a la capçalera: ${header.join(' | ')}`);
     const assigned = new Set(Object.values(col));
-    const extra = header.map((x, i) => i).filter((i) => !assigned.has(i));
-    // una columna sense nom conegut (p. ex. «Catalunya») és el territori
-    if (col.zona == null && extra.length) { col.zona = extra.shift(); }
 
-    const ROLES = ['any', 'zona', 'edat', 'origen', 'sexe', 'concepte'];
-    const maps = {}; ROLES.forEach((r) => { maps[r] = new Map(); });
+    // lectura: cada columna (menys la de valor) es codifica per categories
+    const nC = header.length;
+    const maps = header.map(() => new Map());
     const add = (m, k) => { let i = m.get(k); if (i == null) { i = m.size; m.set(k, i); } return i; };
-    const raw = [];
+    const ids = new Int32Array(Math.max(1, lines.length) * nC);
+    const vals = new Float64Array(Math.max(1, lines.length));
     let nRows = 0;
     for (let li = 1; li < lines.length; li++) {
       const line = lines[li];
       if (!line) continue;
       const f = splitLine(line, delim);
-      nRows++;
-      const rec = ROLES.map((r) => add(maps[r], col[r] != null ? norm(f[col[r]]) : ''));
+      for (let c = 0; c < nC; c++) if (c !== col.valor) ids[nRows * nC + c] = add(maps[c], norm(f[c]));
       let v = parseNumber(f[col.valor]);
       if (col.estat != null && norm(f[col.estat]) === '..') v = NaN;
-      rec.push(v);
-      raw.push(rec);
+      vals[nRows++] = v;
     }
-    if (!raw.length) throw new Error('El fitxer no té cap fila de dades.');
+    if (!nRows) throw new Error('El fitxer no té cap fila de dades.');
     const notes = [];
+    const keysOf = (c) => [...maps[c].keys()];
+    const detailOf = (c) => keysOf(c).filter((k) => k !== '' && !isTotal(k));
+    const get = (c, r) => ids[r * nC + c];
+
+    // una columna sense nom conegut i amb un sol valor (p. ex. «Catalunya») és el territori
+    let unknown = header.map((x, i) => i).filter((i) => !assigned.has(i));
+    if (col.zona == null) {
+      const t = unknown.find((c) => detailOf(c).length <= 1);
+      if (t != null) { col.zona = t; unknown = unknown.filter((c) => c !== t); }
+    }
 
     // concepte amb diverses categories: fa d'origen si no n'hi ha; si no, se'n tria una
-    const concepts = [...maps.concepte.keys()].filter((c) => c !== '');
+    const concepts = col.concepte != null ? keysOf(col.concepte).filter((c) => c !== '') : [];
     let conceptKeep = null;
     let originFromConcept = false;
     if (concepts.length > 1) {
@@ -158,57 +165,105 @@
       }
     }
     const isShare = /%|proporci|percentatge|taxa/i.test(concepts.join(' ') + ' ' + header[col.valor]);
+    const oCol = originFromConcept ? col.concepte : col.origen;
 
-    // per a cada variable: categories de detall (sense totals) o, si només hi ha totals, una de sola
-    const roleKeys = {};
-    const keep = {};
-    ['any', 'zona', 'edat', 'origen', 'sexe', 'concepte'].forEach((r) => {
-      const keys = [...maps[r].keys()];
-      const detail = keys.filter((k) => k !== '' && !isTotal(k));
-      roleKeys[r] = detail.length ? detail : keys;
-      keep[r] = new Set(roleKeys[r].map((k) => maps[r].get(k)));
+    // la resta de columnes amb categories són variables de creuament addicionals
+    const zoneAttr = (c) => {
+      if (col.zona == null || maps[col.zona].size < 2) return false;
+      const rev = keysOf(c), seen = new Map();
+      for (let r = 0; r < nRows; r++) {
+        const val = get(c, r);
+        if (isTotal(rev[val])) continue;
+        const z = get(col.zona, r);
+        if (seen.has(z) && seen.get(z) !== val) return false;
+        seen.set(z, val);
+      }
+      return true;
+    };
+    const extraCols = [];
+    unknown.forEach((c) => {
+      const det = detailOf(c);
+      if (det.length <= 1) return;
+      if (det.length > 40) { notes.push(`La columna «${header[c]}» té ${det.length} categories: massa per fer-ne quotes, no s'ofereix.`); return; }
+      if (det.every((k) => /^[\d\s.,/-]+$/.test(k))) { notes.push(`La columna «${header[c]}» sembla un codi numèric: no s'ofereix com a variable.`); return; }
+      if (zoneAttr(c)) { notes.push(`La columna «${header[c]}» descriu la zona (un sol valor per zona): no s'ofereix com a variable.`); return; }
+      extraCols.push(c);
     });
-    if (conceptKeep != null) keep.concepte = new Set([maps.concepte.get(conceptKeep)]);
-    const oRole = originFromConcept ? 'concepte' : 'origen';
 
-    let ages = roleKeys.edat.map((label) => Object.assign({ label }, parseAge(label) || { lo: null, hi: null }));
+    // categories de cada variable: les de detall (sense totals) o, si només hi ha totals, una de sola
+    const sel = (c, order, only) => {
+      if (c == null) return { keys: [''], pos: null };
+      const keys = keysOf(c), det = keys.filter((k) => k !== '' && !isTotal(k));
+      let use = only != null ? [only] : det.length ? det : keys;
+      if (order) use = order(use);
+      const pos = new Map(); use.forEach((k, i) => pos.set(maps[c].get(k), i));
+      return { keys: use, pos };
+    };
+    const S = {
+      any: sel(col.any, (ks) => ks.slice().sort((a, b) => Number(a) - Number(b))),
+      zona: sel(col.zona),
+      origen: sel(oCol),
+      sexe: sel(col.sexe),
+      concepte: conceptKeep != null ? sel(col.concepte, null, conceptKeep) : { keys: [''], pos: null },
+    };
+    let ages = sel(col.edat).keys.map((label) => Object.assign({ label }, parseAge(label) || { lo: null, hi: null }));
     const hasAge = col.edat != null && ages.length > 1;
     if (hasAge) {
       const bad = ages.filter((a) => a.lo == null);
       if (bad.length) throw new Error('Etiquetes d\'edat que no sé interpretar: ' + bad.map((a) => a.label).join(', '));
-    } else ages = [{ label: col.edat != null ? ages[0].label : 'Totes les edats', lo: null, hi: null }];
+      ages = ages.sort((a, b) => a.lo - b.lo);
+      S.edat = sel(col.edat, () => ages.map((a) => a.label));
+    } else {
+      ages = [{ label: col.edat != null ? ages[0].label : 'Totes les edats', lo: null, hi: null }];
+      S.edat = { keys: [ages[0].label], pos: null };
+      if (col.edat != null) S.edat = sel(col.edat);
+    }
+    const extra = extraCols.map((c, k) => {
+      const x = sel(c);
+      return { key: 'x' + k, col: c, label: cap(header[c]), cats: x.keys, labels: x.keys.map(cap), pos: x.pos };
+    });
 
-    const yearsRaw = roleKeys.any.map((y) => y || '—');
-    const yOrder = yearsRaw.map((y, i) => i).sort((a, b) => Number(yearsRaw[a]) - Number(yearsRaw[b]));
-    const aOrder = ages.map((a, i) => i).sort((a, b) => (ages[a].lo || 0) - (ages[b].lo || 0));
-    const pos = (r, order) => { const m = new Map(); roleKeys[r].forEach((k, i) => m.set(maps[r].get(k), order ? order.indexOf(i) : i)); return m; };
-    const P = { any: pos('any', yOrder), zona: pos('zona'), edat: hasAge ? pos('edat', aOrder) : null, origen: pos(oRole), sexe: pos('sexe') };
-
-    const territory = roleKeys.zona.length === 1 ? (roleKeys.zona[0] || header[col.zona] || '') : null;
-    const origins = roleKeys[oRole].map((o) => o || 'Tots');
+    const territory = S.zona.keys.length === 1 ? (S.zona.keys[0] || header[col.zona] || '') : null;
+    const origins = S.origen.keys.map((o) => o || 'Tots');
     const db = makeDb({
-      years: yOrder.map((i) => yearsRaw[i]),
-      units: roleKeys.zona.map((z) => z || territory || 'Total'),
-      ages: hasAge ? aOrder.map((i) => ages[i]) : ages,
+      years: S.any.keys.map((y) => y || '—'),
+      units: S.zona.keys.map((z) => z || territory || 'Total'),
+      ages,
       origins,
       originLabels: originFromConcept ? origins.map(niceCategory) : origins,
-      sexes: roleKeys.sexe.map((x) => x || 'Total'),
-      originVar: col[oRole] != null && roleKeys[oRole].length > 1 ? header[col[oRole]] : null,
+      sexes: S.sexe.keys.map((x) => x || 'Total'),
+      originVar: oCol != null && S.origen.keys.length > 1 ? header[oCol] : null,
+      extra: extra.map(({ key, label, cats, labels }) => ({ key, label, cats, labels })),
       isShare,
       territory,
       source: { file: opts.fileName || 'dades.csv', rows: nRows, columns: header, notes },
     });
-    const R = { any: 0, zona: 1, edat: 2, origen: 3, sexe: 4, concepte: 5 };
-    for (const rec of raw) {
-      if (!['any', 'zona', 'edat', 'origen', 'sexe', 'concepte'].every((r) => keep[r].has(rec[R[r]]))) continue;
-      const k = db.idx(P.any.get(rec[0]), P.zona.get(rec[1]), hasAge ? P.edat.get(rec[2]) : 0, P.origen.get(rec[R[oRole]]), P.sexe.get(rec[4]));
-      db.val[k] = Number.isNaN(db.val[k]) ? rec[6] : db.val[k] + (Number.isNaN(rec[6]) ? 0 : rec[6]);
+    const at = (x, c, r) => (x.pos ? x.pos.get(get(c, r)) : 0);
+    const exSizes = extra.map((e) => e.cats.length);
+    for (let r = 0; r < nRows; r++) {
+      const iy = at(S.any, col.any, r), iz = at(S.zona, col.zona, r), ia = hasAge ? at(S.edat, col.edat, r) : 0;
+      const io = at(S.origen, oCol, r), is = at(S.sexe, col.sexe, r);
+      if (iy == null || iz == null || ia == null || io == null || is == null) continue;
+      if (S.concepte.pos && !S.concepte.pos.has(get(col.concepte, r))) continue;
+      if (!hasAge && S.edat.pos && !S.edat.pos.has(get(col.edat, r))) continue;
+      let e = 0, ok = true;
+      for (let k = 0; k < extra.length; k++) {
+        const ie = extra[k].pos.get(get(extra[k].col, r));
+        if (ie == null) { ok = false; break; }
+        e = e * exSizes[k] + ie;
+      }
+      if (!ok) continue;
+      const i = db.idx(iy, iz, ia, io, is, e);
+      db.val[i] = Number.isNaN(db.val[i]) ? vals[r] : db.val[i] + (Number.isNaN(vals[r]) ? 0 : vals[r]);
     }
     return db;
   }
 
   function makeDb(d) {
     const nY = d.years.length, nU = d.units.length, nA = d.ages.length, nO = d.origins.length, nS = d.sexes.length;
+    const extra = d.extra || [];
+    const E = extra.reduce((a, e) => a * e.cats.length, 1);
+    if (nY * nU * nA * nO * nS * E > 6e7) throw new Error('El fitxer té massa combinacions de categories per treballar-hi al navegador. Treu alguna columna o filtra\'l abans.');
     const db = {
       years: d.years.map(String),
       units: d.units.map(parseUnit),
@@ -220,8 +275,9 @@
       isShare: !!d.isShare,
       territory: d.territory || null,
       source: d.source || {},
-      val: d.val || new Float64Array(nY * nU * nA * nO * nS).fill(NaN),
-      idx: (y, u, a, o, s) => ((((y * nU + u) * nA + a) * nO + o) * nS + s),
+      extra, E,
+      val: d.val || new Float64Array(nY * nU * nA * nO * nS * E).fill(NaN),
+      idx: (y, u, a, o, s, e) => (((((y * nU + u) * nA + a) * nO + o) * nS + s) * E + (e || 0)),
     };
     db.has = {
       any: !(db.years.length === 1 && db.years[0] === '—'),
@@ -230,6 +286,7 @@
       origen: nO > 1,
       sexe: nS > 1,
     };
+    extra.forEach((e) => { db.has[e.key] = e.cats.length > 1; });
     const munis = new Map();
     db.units.forEach((u, i) => { if (!munis.has(u.muni)) munis.set(u.muni, []); munis.get(u.muni).push(i); });
     db.munis = [...munis.entries()].map(([name, units]) => ({ name, label: niceMuni(name), units }))
@@ -248,7 +305,7 @@
     return {
       years: db.years, units: db.units.map((u) => u.name), ages: db.ages.map((a) => a.label),
       origins: db.origins, originLabels: db.originLabels, sexes: db.sexes, originVar: db.originVar,
-      isShare: db.isShare, territory: db.territory, source: db.source,
+      isShare: db.isShare, territory: db.territory, source: db.source, extra: db.extra,
       values: Array.from(db.val, (v) => (Number.isNaN(v) ? -1 : Math.round(v * 100) / 100)),
     };
   }
@@ -346,6 +403,7 @@
    */
   function compute(db, cfg) {
     const errors = [], warnings = [], notes = [];
+    (db.source.notes || []).forEach((n) => notes.push(n));
     const y = db.years.indexOf(String(cfg.year));
     if (y < 0) throw new Error('Any no disponible a la base de dades: ' + cfg.year);
     if (!cfg.units || !cfg.units.length) throw new Error('Cal seleccionar com a mínim una unitat territorial.');
@@ -398,11 +456,25 @@
       edat: labels,
       origen: oIdx.map((o) => cap(db.originLabels[o])),
     };
-    const nZ = zones.length, nS = cats.sexe.length, nB = bands.length, nO = oIdx.length;
+    const vl = (v) => VAR_NAMES[v] || (db.extra.find((e) => e.key === v) || {}).label || v;
+    db.extra.forEach((e) => { cats[e.key] = e.labels; });
+    const nZ = zones.length, nS = cats.sexe.length, nB = bands.length, nO = oIdx.length, E = db.E;
+    const exSizes = db.extra.map((e) => e.cats.length);
 
-    // --- cub de l'univers: zona × sexe × franja × origen
-    const cube = new Float64Array(nZ * nS * nB * nO);
-    const ci = (z, s, b, o) => ((z * nS + s) * nB + b) * nO + o;
+    // --- cub de l'univers: zona × sexe × franja × origen × variables addicionals
+    const C = nS * nB * nO * E;
+    const cube = new Float64Array(nZ * C);
+    const ci = (z, s, b, o, e) => (((z * nS + s) * nB + b) * nO + o) * E + (e || 0);
+    // coordenades de cada cel·la (per a les taules)
+    const coordsOf = Array.from({ length: C }, (_, c) => {
+      const out = {};
+      let r = c;
+      for (let k = db.extra.length - 1; k >= 0; k--) { out[db.extra[k].key] = r % exSizes[k]; r = Math.floor(r / exSizes[k]); }
+      out.origen = r % nO; r = Math.floor(r / nO);
+      out.edat = r % nB; r = Math.floor(r / nB);
+      out.sexe = r;
+      return out;
+    });
     let confidential = 0;
     const confUnits = new Set();
     cfg.units.forEach((x, k) => {
@@ -410,10 +482,10 @@
       ageMap.forEach((m, a) => {
         if (!m) return;
         oIdx.forEach((o, oi) => {
-          for (let s = 0; s < nS; s++) {
-            const v = db.val[db.idx(y, x.u, a, o, s)];
+          for (let s = 0; s < nS; s++) for (let e = 0; e < E; e++) {
+            const v = db.val[db.idx(y, x.u, a, o, s, e)];
             if (Number.isNaN(v)) { confidential++; confUnits.add(db.units[x.u].name); continue; }
-            cube[ci(z, s, m.band, oi)] += v * m.frac;
+            cube[ci(z, s, m.band, oi, e)] += v * m.frac;
           }
         });
       });
@@ -429,9 +501,11 @@
       // les categories triades han de ser excloents i cobrir el total
       const per = new Map();
       cfg.units.forEach((x) => db.ages.forEach((a, ai) => db.sexes.forEach((sx, si) => {
-        let sum = 0, any = false;
-        oIdx.forEach((o) => { const v = db.val[db.idx(y, x.u, ai, o, si)]; if (!Number.isNaN(v)) { sum += v; any = true; } });
-        if (any) per.set(`${x.u}|${ai}|${si}`, sum);
+        for (let e = 0; e < E; e++) {
+          let sum = 0, any = false;
+          oIdx.forEach((o) => { const v = db.val[db.idx(y, x.u, ai, o, si, e)]; if (!Number.isNaN(v)) { sum += v; any = true; } });
+          if (any) per.set(`${x.u}|${ai}|${si}|${e}`, sum);
+        }
       })));
       const sums = [...per.values()];
       if (sums.length && sums.some((v) => Math.abs(v - 100) > 1.5)) {
@@ -447,7 +521,6 @@
       if (zpVals.some((v) => !(v > 0))) errors.push('Per ajustar el pes de les zones cal informar la població de totes les zones.');
       else if (nZ < 2) warnings.push('L\'ajust de pes de zones no té efecte amb una sola zona.');
       else {
-        const C = nS * nB * nO;
         const M = zones.map((_, z) => Array.from({ length: C }, (_, c) => cube[z * C + c]));
         const zsum = zpVals.reduce((a, b) => a + b, 0);
         const rowT = zpVals.map((v) => (v / zsum) * Utot);
@@ -467,13 +540,11 @@
       const plan = planColumns(vars, cats);
       const nR = rows === 'zona' ? nZ : 1;
       const U = Array.from({ length: nR }, () => new Array(plan.leaves.length).fill(0));
-      const pos = { sexe: -1, edat: -1, origen: -1 };
-      vars.forEach((v, i) => { pos[v] = i; });
       const strides = vars.map((v) => cats[v].length);
-      for (let z = 0; z < nZ; z++) for (let s = 0; s < nS; s++) for (let b = 0; b < nB; b++) for (let o = 0; o < nO; o++) {
-        const v = cube[ci(z, s, b, o)];
+      for (let z = 0; z < nZ; z++) for (let c = 0; c < C; c++) {
+        const v = cube[z * C + c];
         if (!v) continue;
-        const coords = { sexe: s, edat: b, origen: o };
+        const coords = coordsOf[c];
         let leaf = 0;
         vars.forEach((vn, i) => { leaf = leaf * strides[i] + coords[vn]; });
         U[rows === 'zona' ? z : 0][leaf] += v;
@@ -485,9 +556,10 @@
     const tables = [];
     // les variables que la base no té no s'ofereixen: es treuen del disseny
     const avail = { sexe: db.has.sexe, edat: db.has.edat, origen: db.has.origen };
+    db.extra.forEach((e) => { avail[e.key] = db.has[e.key]; });
     const clean = (t) => {
       const lost = (t.cols || []).filter((v) => !avail[v]);
-      if (lost.length) notes.push(`La base no té ${lost.map((v) => VAR_NAMES[v].toLowerCase()).join(' ni ')}: s'ha tret del creuament.`);
+      if (lost.length) notes.push(`La base no té ${lost.map((v) => vl(v).toLowerCase()).join(' ni ')}: s'ha tret del creuament.`);
       return Object.assign({}, t, { cols: (t.cols || []).filter((v) => avail[v]), rows: db.has.zona ? t.rows : 'cap' });
     };
     const mainCfg = clean(cfg.main || { rows: 'zona', cols: ['sexe', 'edat'] });
@@ -519,7 +591,7 @@
       const subset = vars.every((v) => main.vars.includes(v));
       let mode = t.mode || 'derivada';
       if (mode === 'derivada' && !subset) {
-        warnings.push(`Taula ${k + 2}: creua variables que no són a la taula principal (${vars.filter((v) => !main.vars.includes(v)).map((v) => VAR_NAMES[v]).join(', ')}); es calcula com a quota independent.`);
+        warnings.push(`Taula ${k + 2}: creua variables que no són a la taula principal (${vars.filter((v) => !main.vars.includes(v)).map(vl).join(', ')}); es calcula com a quota independent.`);
         mode = 'independent';
       }
       if (mode === 'independent' && t.rows === 'zona' && main.rows !== 'zona') {
@@ -569,7 +641,7 @@
     }
 
     function defaultTitle(t) {
-      const parts = (t.rows === 'zona' ? ['ZONA'] : []).concat(t.vars.map((v) => VAR_NAMES[v].toUpperCase()));
+      const parts = (t.rows === 'zona' ? ['ZONA'] : []).concat(t.vars.map((v) => vl(v).toUpperCase()));
       const what = parts.length ? 'QUOTES PER ' + joinCa(parts) : 'QUOTA TOTAL';
       const extra = t.mode === 'derivada' ? ' (suma de la taula principal)' : t.mode === 'independent' ? ' (quota independent)' : '';
       return what + (t.rows === 'cap' ? ', TOTAL ÀMBIT' : '') + extra;
@@ -585,7 +657,7 @@
     const moe = (n, U) => (db.isShare ? (n > 0 ? 1.96 * Math.sqrt(0.25 / n) : NaN) : n > 0 && U > 1 ? 1.96 * Math.sqrt(0.25 / n) * Math.sqrt(Math.max(0, U - n) / (U - 1)) : NaN);
     const zoneStats = main.rows === 'zona' ? zones.map((z, i) => {
       const u = main.U[i].reduce((a, b) => a + b, 0);
-      const cu = census.slice(i * nS * nB * nO, (i + 1) * nS * nB * nO).reduce((a, b) => a + b, 0);
+      const cu = census.slice(i * C, (i + 1) * C).reduce((a, b) => a + b, 0);
       return { zona: z, univers: u, censUnivers: cu, quota: main.rowTotals[i], moe: moe(main.rowTotals[i], cu) };
     }) : [];
 
@@ -619,6 +691,7 @@
     return {
       N, Utot, zones, cats, bands, bandLabels: labels, origins: oIdx, tables, main, cube, census,
       ipfApplied, year: db.years[y], minAge, maxAge, isShare: db.isShare, has: db.has,
+      varLabels: Object.fromEntries(Object.keys(cats).map((k) => [k, vl(k)])),
       diag: {
         cells: cells.length, small, smallPct: cells.length ? small / cells.length : 0, threshold: thr,
         zeroCols, zeroCells, zoneStats, moe: moe(N, Utot), confidential,
@@ -654,8 +727,13 @@
     const out = [];
     cfg.units.forEach((x) => {
       db.ages.forEach((a, ai) => db.origins.forEach((o, oi) => db.sexes.forEach((s, si) => {
-        const v = db.val[db.idx(y, x.u, ai, oi, si)];
-        out.push([db.years[y], db.units[x.u].name, a.label, o, s, Number.isNaN(v) ? null : v, Number.isNaN(v) ? '..' : '']);
+        for (let e = 0; e < db.E; e++) {
+          const v = db.val[db.idx(y, x.u, ai, oi, si, e)];
+          const ex = [];
+          let r = e;
+          for (let k = db.extra.length - 1; k >= 0; k--) { ex.unshift(db.extra[k].cats[r % db.extra[k].cats.length]); r = Math.floor(r / db.extra[k].cats.length); }
+          out.push([db.years[y], db.units[x.u].name, a.label, o, s, ...ex, Number.isNaN(v) ? null : v, Number.isNaN(v) ? '..' : '']);
+        }
       })));
     });
     return out;

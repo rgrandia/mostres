@@ -17,7 +17,9 @@
   };
   const fmt = (x, d) => (Number.isFinite(x) ? x.toLocaleString('ca-ES', { maximumFractionDigits: d || 0, minimumFractionDigits: d || 0 }) : '—');
   const cap = (t) => (t ? t[0].toUpperCase() + t.slice(1) : t);
-  const VARS = [['sexe', 'Sexe'], ['edat', 'Edat'], ['origen', 'Origen']];
+  const BASE_VARS = [['sexe', 'Sexe'], ['edat', 'Edat'], ['origen', 'Origen']];
+  /** Variables de creuament: les conegudes més les columnes addicionals de la base. */
+  const vars = () => BASE_VARS.concat((db.extra || []).map((e) => [e.key, e.label]));
   const STORE_KEY = 'mostres.cfg.v1';
 
   let db = null;
@@ -130,7 +132,7 @@
       const t0 = performance.now();
       const nd = await readFile(file);
       const oldNames = state ? state.units.map((x) => ({ name: x.name, zona: x.zona, inc: x.inc })) : [];
-      const sig = (d) => ['zona', 'sexe', 'edat', 'origen'].map((k) => (d.has[k] ? 1 : 0)).join('') + (d.isShare ? '%' : '');
+      const sig = (d) => ['zona', 'sexe', 'edat', 'origen'].map((k) => (d.has[k] ? 1 : 0)).join('') + (d.isShare ? '%' : '') + (d.extra || []).map((e) => e.label).join('|');
       const sameShape = db && sig(db) === sig(nd);
       db = nd;
       dbLabel = `${nd.source.file} (carregada ${new Date().toLocaleDateString('ca-ES')})`;
@@ -345,7 +347,7 @@
       db.has.any ? `anys ${db.years[0]}–${db.years[db.years.length - 1]}` : 'sense any',
       db.isShare ? ' · valors en %' : '',
       h('div', { class: 'vars-avail' }, h('span', {}, 'Variables:'),
-        [['zona', 'zona'], ['sexe', 'sexe'], ['edat', 'edat'], ['origen', db.originVar || 'origen']].map(([k, l]) => h('span', { class: 'chip' + (db.has[k] ? '' : ' no'), title: db.has[k] ? 'disponible' : 'no és a la base' }, l))));
+        [['zona', 'zona'], ['sexe', 'sexe'], ['edat', 'edat'], ['origen', db.originVar || 'origen']].concat((db.extra || []).map((e) => [e.key, e.label.toLowerCase()])).map(([k, l]) => h('span', { class: 'chip' + (db.has[k] ? '' : ' no'), title: db.has[k] ? 'disponible' : 'no és a la base' }, l))));
     document.querySelectorAll('[data-needs]').forEach((el) => { el.hidden = !el.dataset.needs.split(' ').every((k) => db.has[k]); });
     $('#w-year').hidden = !db.has.any;
     const fixed = $('#ambit-fixed');
@@ -690,7 +692,7 @@
       const used = t.cols.filter((_, i) => i !== lvl);
       const sel = h('select', { 'aria-label': `Variable de columna ${lvl + 1}`, disabled: lvl > t.cols.length },
         h('option', { value: '' }, lvl === 0 ? '(cap)' : '—'),
-        VARS.filter(([k]) => db.has[k] && (!used.includes(k) || k === cur)).map(([k, l]) => h('option', { value: k, selected: k === cur }, l)));
+        vars().filter(([k]) => db.has[k] && (!used.includes(k) || k === cur)).map(([k, l]) => h('option', { value: k, selected: k === cur }, l)));
       sel.onchange = () => {
         const cols = t.cols.slice(0, lvl);
         if (sel.value) cols.push(sel.value, ...t.cols.slice(lvl + 1).filter((v) => v !== sel.value));
@@ -712,7 +714,7 @@
   /** Resum d'una línia de cada pas, visible quan el pas és plegat. */
   function stepSummaries() {
     const set = (n, ...kids) => { const el = $('#sum-' + n); if (el) el.replaceChildren(...kids); };
-    const name = (t) => (t.rows === 'zona' && db.has.zona ? ['Zona'] : []).concat((t.cols || []).map((v) => M.VAR_NAMES[v])).join(' × ') || 'Total';
+    const name = (t) => (t.rows === 'zona' && db.has.zona ? ['Zona'] : []).concat((t.cols || []).map((v) => (vars().find(([k]) => k === v) || [v, v])[1])).join(' × ') || 'Total';
     set(1, h('b', {}, db.source.file || 'Base'), db.has.any ? ` · ${db.years[0]}–${db.years[db.years.length - 1]}` : '', db.isShare ? ' · %' : '');
     set(2, state.estudi ? h('b', {}, 'Estudi ' + state.estudi) : 'Sense número d\'estudi', ` · ${state.anyEstudi}`);
     const nz = zoneList().length, nd = districts().filter((d) => zoneList().includes(d)).length;

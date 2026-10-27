@@ -120,4 +120,26 @@ t('base sense zones ni edat, en percentatges (censph16401cat)', () => {
   assert.ok(bad.warnings.some((w) => /no 100%/.test(w)));
 });
 
+t('detecta columnes addicionals com a variables de creuament', () => {
+  const f = path.join(__dirname, 'fixtures', 'estudis.csv');
+  const edb = M.parseCensusText(fs.readFileSync(f, 'utf8'), { fileName: 'estudis.csv' });
+  assert.strictEqual(edb.extra.length, 1);
+  assert.strictEqual(edb.extra[0].label, "Nivell d'estudis");
+  assert.deepStrictEqual(edb.extra[0].labels, ['Sense estudis', 'Primaris', 'Secundaris', 'Superiors']);
+  assert.ok(edb.has.x0 && edb.has.zona && edb.has.edat && edb.has.sexe);
+  assert.ok(edb.source.notes.some((n) => /codi/.test(n)));
+  const units = M.defaultZones(edb, 'Vilafranca');
+  const cfg = { year: '2025', units, minAge: 18, bands: [18, 40, 65], N: 300,
+    main: { rows: 'zona', cols: ['sexe', 'x0'] }, extras: [{ rows: 'cap', cols: ['x0'], mode: 'derivada' }, { rows: 'zona', cols: ['edat', 'x0'], mode: 'independent' }] };
+  const r = M.compute(edb, cfg);
+  assert.strictEqual(r.main.sum, 300);
+  assert.strictEqual(r.main.plan.leaves.length, 8);
+  assert.strictEqual(r.varLabels.x0, "Nivell d'estudis");
+  assert.ok(/NIVELL D'ESTUDIS/.test(r.main.title));
+  // l'univers amb la variable addicional és el mateix que sense creuar-la
+  const r0 = M.compute(edb, Object.assign({}, cfg, { main: { rows: 'zona', cols: ['sexe'] }, extras: [] }));
+  assert.ok(Math.abs(r.Utot - r0.Utot) < 1e-6);
+  r.tables[2].rowTotals.forEach((v, i) => assert.strictEqual(v, r.main.rowTotals[i]));
+});
+
 console.log(`\n${ok} tests superats`);
