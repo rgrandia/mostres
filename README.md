@@ -18,8 +18,15 @@ calcula al navegador.
    *Output Directory* (ja ho fixa `vercel.json`).
 3. *Deploy*. Cada push a `main` torna a desplegar automàticament.
 
-Per limitar-ne l'accés a l'equip, activa *Settings → Deployment Protection*
-(Vercel Authentication) al projecte.
+L'aplicatiu demana una **contrasenya** abans de servir cap fitxer (pàgina i
+dades). Ho fa `middleware.js` al servidor de Vercel; al codi només hi ha el hash
+SHA-256 de la contrasenya. Per canviar-la sense tocar el codi, defineix la
+variable d'entorn `APP_PASSWORD` a *Settings → Environment Variables* i torna a
+desplegar: té prioritat sobre la del codi i tanca les sessions obertes. La
+sessió dura 30 dies; «Surt» la tanca. Si s'obre `index.html` en local, no hi ha
+contrasenya.
+
+Test: `node tests/middleware.test.mjs <contrasenya>`.
 
 Les llibreries (ExcelJS 4.4.0 i JSZip 3.10.1) són a `vendor/`, de manera que
 l'aplicatiu no depèn de cap CDN extern (només les fonts de Google, amb

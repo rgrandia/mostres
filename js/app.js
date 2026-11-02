@@ -849,6 +849,8 @@
     $('#z-one').addEventListener('click', () => zonePreset('one'));
     $('#d-close').addEventListener('click', () => $('#districts').close());
     initSteps();
+    // l'enllaç per sortir només té sentit a la versió publicada (amb contrasenya)
+    if (location.protocol === 'https:') $('#logout').hidden = false;
     $('#districts').addEventListener('close', () => { selected.clear(); renderZones(); });
     $('#add-extra').addEventListener('click', () => { state.extras.push({ rows: 'cap', cols: ['sexe'], mode: 'derivada' }); renderDesign(); schedule(); });
     document.querySelectorAll('[data-preset]').forEach((b) => b.addEventListener('click', () => applyPreset(b.dataset.preset)));

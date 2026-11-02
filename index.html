@@ -45,6 +45,7 @@ input, select { color: var(--ink); }
 .export { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 #fname { font-size: 12px; color: var(--blanc); overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
 #export-msg { font-size: 12.5px; color: var(--blanc); }
+.logout { font-size: 12.5px; font-weight: 500; color: var(--blanc); }
 .top .btn.primary { background: var(--blanc); color: var(--blau); border-color: var(--blanc); }
 .top .btn.primary:disabled { background: transparent; color: var(--blau-25); border-color: var(--blau-50); opacity: 1; }
 
@@ -254,6 +255,7 @@ body.dragging .dcard, body.dragging .pool, body.dragging .outbox { outline: 1px 
       <span id="fname"></span>
       <button id="export" class="btn primary" type="button" disabled>Exporta a Excel</button>
       <span id="export-msg" role="status"></span>
+      <a id="logout" class="logout" href="/sortir" hidden>Surt</a>
     </div>
   </div>
 </header>
